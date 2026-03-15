@@ -1,0 +1,11 @@
+Model Information:
+* title:	Surveillance Cam
+* source:	https://sketchfab.com/3d-models/surveillance-cam-3d7f98993ee340179af212e465dd8b4e
+* author:	Marcel Schanz (https://sketchfab.com/mschanz)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Surveillance Cam" (https://sketchfab.com/3d-models/surveillance-cam-3d7f98993ee340179af212e465dd8b4e) by Marcel Schanz (https://sketchfab.com/mschanz) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
