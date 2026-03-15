@@ -1,9 +1,41 @@
+import config.config as config
+
+
 ZONE_THREAT_SCORES = {
     "low": 10,
     "medium": 20,
     "high": 35,
     "critical": 50
 }
+
+
+MODE_WEIGHTS = {
+
+    "SHOP": {
+        "person": 3,
+        "loitering": 8,
+        "running": 12,
+        "panic": 18,
+        "abandoned": 25
+    },
+
+    "OFFICE": {
+        "person": 6,
+        "loitering": 15,
+        "running": 18,
+        "panic": 22,
+        "abandoned": 25
+    },
+
+    "WAREHOUSE": {
+        "person": 10,
+        "loitering": 10,
+        "running": 20,
+        "panic": 25,
+        "abandoned": 30
+    }
+}
+
 
 def calculate_threat_score(
     person_count,
@@ -12,30 +44,31 @@ def calculate_threat_score(
     motion
 ):
 
+    mode = config.mode
+    weights = MODE_WEIGHTS.get(mode, MODE_WEIGHTS["SHOP"])
+
     score = 0
 
-    # People should not be dangerous by default
-    score += person_count * 5
+    # people presence
+    score += person_count * weights["person"]
 
-    zone_hits = 0
-
+    # zone intrusion
     for zone_name, triggered, threat_level in zone_results:
 
         if triggered:
             score += ZONE_THREAT_SCORES.get(threat_level, 20)
-            zone_hits += 1
 
-    # Loitering
-    score += loitering_count * 10
+    # loitering
+    score += loitering_count * weights["loitering"]
 
-    # Motion behaviour
+    # motion behaviour
     if motion.get("running"):
-        score += 15
+        score += weights["running"]
 
     if motion.get("panic"):
-        score += 20
+        score += weights["panic"]
 
     if motion.get("abandoned"):
-        score += 25
+        score += weights["abandoned"]
 
     return min(score, 100)
