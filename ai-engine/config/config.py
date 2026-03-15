@@ -1,10 +1,11 @@
-MODEL_PATH = "yolov8n.pt"
+prev_score = 0
 
-FRAME_WIDTH = 640
-FRAME_HEIGHT = 360
+mode = "OFFICE"
 
-CONFIDENCE_THRESHOLD = 0.4
-
-TARGET_CLASSES = [0]   # person
-
-DETECTION_INTERVAL = 4  # detect every N frames
+zones = [
+    {
+        "name": "vault",
+        "coords": [(100,100),(400,100),(400,300),(100,300)],
+        "threat_level": "medium"
+    }
+]

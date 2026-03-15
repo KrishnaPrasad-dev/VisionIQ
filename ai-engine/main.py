@@ -1,31 +1,36 @@
 import cv2
-from camera.camera_reader import CameraReader
 from core.pipeline import process_frame
+
 
 def main():
 
-    camera = CameraReader("test_videos/test3.mp4")
+    # change this to your video file or webcam
+    cap = cv2.VideoCapture("test_videos/test.mp4")
+    # for webcam use: cv2.VideoCapture(0)
+
+    if not cap.isOpened():
+        print("Could not open video source")
+        return
 
     while True:
 
-        frame = camera.read()
+        ret, frame = cap.read()
 
-        if frame is None:
+        if not ret:
             break
 
-        frame, detections = process_frame(frame)
+        annotated, score, status = process_frame(frame)
 
-        for d in detections:
-            x1, y1, x2, y2 = map(int, d["bbox"])
-            cv2.rectangle(frame,(x1,y1),(x2,y2),(0,255,0),2)
+        cv2.imshow("VisionIQ", annotated)
 
-        cv2.imshow("VisionIQ", frame)
+        key = cv2.waitKey(1)
 
-        if cv2.waitKey(1) & 0xFF == 27:
+        if key == 27:   # ESC to exit
             break
 
-    camera.release()
+    cap.release()
     cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()

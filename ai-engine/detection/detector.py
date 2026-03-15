@@ -1,28 +1,40 @@
-from config.config import CONFIDENCE_THRESHOLD, TARGET_CLASSES
-from detection.model_loader import load_model
+import torch
+from ultralytics import YOLO
+import supervision as sv
+import numpy as np
 
-model = load_model()
 
-def detect(frame):
+class PersonDetector:
 
-    results = model(
-        frame,
-        conf=CONFIDENCE_THRESHOLD,
-        classes=TARGET_CLASSES,
-        verbose=False
-    )
+    def __init__(self):
 
-    detections = []
+        print("Loading YOLO model...")
 
-    for r in results:
-        for box in r.boxes:
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
-            confidence = float(box.conf[0])
+        self.model = YOLO("models/yolov8n.pt")
 
-            detections.append({
-                "bbox": [x1, y1, x2, y2],
-                "confidence": confidence
-            })
+        self.model.to(self.device)
 
-    return detections
+        # warmup run (improves first inference speed)
+        dummy = np.zeros((480, 640, 3), dtype=np.uint8)
+        self.model(dummy, classes=[0], conf=0.5, verbose=False)
+
+        print(f"YOLO ready on {self.device}")
+
+    def detect(self, frame):
+
+        results = self.model(
+            frame,
+            classes=[0],
+            conf=0.5,
+            imgsz=640,
+            device=self.device,
+            verbose=False
+        )
+
+        return sv.Detections.from_ultralytics(results[0])
+
+
+# IMPORTANT: create global instance
+detector = PersonDetector()
