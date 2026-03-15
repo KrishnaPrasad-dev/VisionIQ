@@ -1,0 +1,10 @@
+MODEL_PATH = "yolov8n.pt"
+
+FRAME_WIDTH = 640
+FRAME_HEIGHT = 360
+
+CONFIDENCE_THRESHOLD = 0.4
+
+TARGET_CLASSES = [0]   # person
+
+DETECTION_INTERVAL = 4  # detect every N frames
