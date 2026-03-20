@@ -4,9 +4,9 @@ from core.pipeline import process_frame
 
 def main():
 
-    # change this to your video file or webcam
+    
     cap = cv2.VideoCapture("test_videos/test3.mp4")
-    # for webcam use: cv2.VideoCapture(0)
+    
 
     if not cap.isOpened():
         print("Could not open video source")

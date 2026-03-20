@@ -1,27 +1,7 @@
 import mongoose from "mongoose";
 
-const UserSchema = new mongoose.Schema(
-{
-name: {
-type: String,
-required: true
-},
-email: {
-type: String,
-required: true,
-unique: true
-},
-password: {
-type: String,
-required: true
-},
-rollnumber: {
-type: String,
-required: true
-}
-},
-{ timestamps: true }
-);
+export const connectDB = async () => {
+  if (mongoose.connection.readyState >= 1) return;
 
-export default mongoose.models.User ||
-mongoose.model("User", UserSchema);
+  await mongoose.connect(process.env.MONGO_URI);
+};
