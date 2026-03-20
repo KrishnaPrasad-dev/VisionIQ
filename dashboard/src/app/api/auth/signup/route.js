@@ -8,7 +8,7 @@ export async function POST(req) {
   try {
     await connectDB();
 
-    const { name, email, password, location } = await req.json();
+    const { name, email, password,  } = await req.json();
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -21,7 +21,6 @@ export async function POST(req) {
       name,
       email,
       password: hashedPassword,
-    location
     });
 
     return Response.json({ message: "Signup successful ✅" });
