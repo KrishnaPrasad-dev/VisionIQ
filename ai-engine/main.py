@@ -1,31 +1,42 @@
 import cv2
-from core.pipeline import process_frame
+
+from core.pipeline import process_frame, draw_overlay
+from core.rules_engine import RulesEngine
 
 
 def main():
 
-    
     cap = cv2.VideoCapture("test_videos/test3.mp4")
-    
 
     if not cap.isOpened():
         print("Could not open video source")
         return
 
+    camera_config = {
+        "camera_id": "cam_1",
+        "zones": [],
+        "rules": {
+            "maxPeople": 2,
+            "restrictedAccess": False
+        }
+    }
+
+    rules_engine = RulesEngine(camera_config["rules"])
+
     while True:
 
         ret, frame = cap.read()
-
         if not ret:
             break
 
-        annotated, score, status = process_frame(frame)
+        result = process_frame(frame, camera_config)
+        events = rules_engine.evaluate(result)
 
-        cv2.imshow("VisionIQ", annotated)
+        display = draw_overlay(result["frame"], result, events)
 
-        key = cv2.waitKey(1)
+        cv2.imshow("VisionIQ", display)
 
-        if key == 27:   # ESC to exit
+        if cv2.waitKey(1) == 27:
             break
 
     cap.release()

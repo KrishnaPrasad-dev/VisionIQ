@@ -1,106 +1,132 @@
-import numpy as np
 import cv2
 
 from detection.detector import detector
-from motion.motion_detector import MotionDetector
-from tracking.tracker import dwell_tracker
-
-from scoring.threat_score import calculate_threat_score
-from scoring.score_smoother import apply_score_decay
-from scoring.status_manager import get_status
-
-from visualization.annotator import annotate_frame
-import config.config as config
+from core.threat import calculate_threat_score, get_status
 
 
-# create motion detector instance
-motion_detector = MotionDetector()
+def process_frame(frame, camera_config):
 
-
-def process_frame(frame):
-
-    # ── DETECTION ─────────────────────────────────────
+    # -------------------------------
+    # DETECTION
+    # -------------------------------
     detections = detector.detect(frame)
+    persons = [d for d in detections if d["class"] == "person"]
 
-    # ── MOTION ANALYSIS ───────────────────────────────
-    motion_detected = motion_detector.detect(frame)
+    # -------------------------------
+    # ZONES
+    # -------------------------------
+    zone_hits = []
 
-    # convert to structure expected by scorer/annotator
-    motion_data = {
-        "running": False,
-        "panic": False,
-        "abandoned": False,
-        "motion_score": 10 if motion_detected else 0,
-        "flow_vectors": []
-    }
+    for person in persons:
+        x1, y1, x2, y2 = person["bbox"]
 
-    # ── ZONE CHECK ────────────────────────────────────
-    zone_results = []
-    loitering_ids = []
+        cx = int((x1 + x2) / 2)
+        cy = int(y2)
 
-    if len(detections) > 0:
+        for zone in camera_config.get("zones", []):
+            polygon = zone["coordinates"]
 
-        for zone in config.zones:
+            inside = cv2.pointPolygonTest(polygon, (cx, cy), False)
 
-            zone_name = zone["name"]
-            threat_level = zone["threat_level"]
-            coords = np.array(zone["coords"], np.int32)
+            if inside >= 0:
+                zone_hits.append({
+                    "zone": zone["name"],
+                    "threat": zone.get("threat_level", 1)
+                })
 
-            triggered = False
-            in_zone_flags = []
+    # -------------------------------
+    # METRICS
+    # -------------------------------
+    people_count = len(persons)
+    loiter_alerts = []
 
-            for i in range(len(detections)):
-
-                x1, y1, x2, y2 = detections.xyxy[i]
-
-                cx = int((x1 + x2) / 2)
-                cy = int((y1 + y2) / 2)
-
-                inside = cv2.pointPolygonTest(coords, (cx, cy), False) >= 0
-                in_zone_flags.append(inside)
-
-                if inside:
-                    triggered = True
-
-            zone_results.append((zone_name, triggered, threat_level))
-
-            # ── LOITERING CHECK ─────────────────────
-            if detections.tracker_id is not None:
-
-                track_ids = detections.tracker_id
-
-                alerts = dwell_tracker.update(
-                    track_ids,
-                    zone_name,
-                    in_zone_flags
-                )
-
-                for track_id, zone, dwell in alerts:
-                    loitering_ids.append(track_id)
-
-    # ── THREAT SCORE ──────────────────────────────────
+    # -------------------------------
+    # THREAT SCORE
+    # -------------------------------
     score = calculate_threat_score(
-    person_count=len(detections),
-    zone_results=zone_results,
-    loitering_count=len(loitering_ids),
-    motion=motion_data
-)
-
-    # smooth score
-    score = apply_score_decay(score)
-
-    # determine status
-    status = get_status(score)
-
-    # ── ANNOTATE FRAME ────────────────────────────────
-    annotated = annotate_frame(
-        frame,
-        detections,
-        zone_results,
-        score,
-        status,
-        loitering_ids,
-        motion_data
+        people_count=people_count,
+        zone_hits=zone_hits,
+        loitering=loiter_alerts,
+        rules=camera_config["rules"]
     )
 
-    return annotated, score, status
+    status = get_status(score)
+
+    return {
+        "frame": frame,
+        "detections": persons,
+        "people_count": people_count,
+        "zone_hits": zone_hits,
+        "loitering": loiter_alerts,
+        "score": score,
+        "status": status
+    }
+
+
+# -------------------------------
+# DRAW OVERLAY
+# -------------------------------
+def draw_overlay(frame, result, events):
+
+    # BOXES
+    for det in result["detections"]:
+        x1, y1, x2, y2 = det["bbox"]
+        conf = det["confidence"]
+
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        cv2.putText(frame, f"{conf:.2f}",
+                    (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 0),
+                    2)
+
+    # PEOPLE COUNT
+    cv2.putText(frame,
+                f"People: {result['people_count']}",
+                (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (255, 255, 255),
+                2)
+
+    # STATUS
+    status = result["status"]
+
+    color = (0, 255, 0)
+    if status == "WARNING":
+        color = (0, 255, 255)
+    elif status == "DANGER":
+        color = (0, 0, 255)
+
+    cv2.putText(frame,
+                f"Status: {status}",
+                (20, 80),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                color,
+                3)
+
+    # SCORE
+    cv2.putText(frame,
+                f"Score: {result['score']}",
+                (20, 120),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (255, 255, 255),
+                2)
+
+    # ALERTS
+    y = 160
+    for event in events:
+        cv2.putText(frame,
+                    f"ALERT: {event['type']}",
+                    (20, y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 0, 255),
+                    2)
+        y += 30
+
+    return frame
