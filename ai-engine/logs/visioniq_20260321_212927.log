@@ -1,0 +1,19 @@
+2026-03-21 21:29:27 - VisionIQ - INFO - Starting VisionIQ - FPS: 25.0
+2026-03-21 21:29:28 - VisionIQ - INFO - Config: {
+  "camera_id": "cam_1",
+  "zones": [],
+  "rules": {
+    "maxPeople": 2,
+    "restrictedAccess": false
+  }
+}
+2026-03-21 21:29:38 - VisionIQ - INFO - Frame 30 | People: 1 | Score: 15 | Status: SAFE | Alerts: 0
+2026-03-21 21:29:48 - VisionIQ - INFO - Frame 60 | People: 1 | Score: 3 | Status: SAFE | Alerts: 0
+2026-03-21 21:29:57 - VisionIQ - INFO - Frame 90 | People: 1 | Score: 3 | Status: SAFE | Alerts: 0
+2026-03-21 21:30:06 - VisionIQ - INFO - Frame 120 | People: 1 | Score: 15 | Status: SAFE | Alerts: 0
+2026-03-21 21:30:13 - VisionIQ - WARNING - ALERT CREATED: alert_20260321_213013_506459 | Score: 92 | Status: CRITICAL
+2026-03-21 21:30:16 - VisionIQ - INFO - Frame 150 | People: 4 | Score: 81 | Status: CRITICAL | Alerts: 1
+2026-03-21 21:30:22 - VisionIQ - WARNING - ALERT CREATED: alert_20260321_213022_790420 | Score: 100 | Status: CRITICAL
+2026-03-21 21:30:25 - VisionIQ - INFO - Frame 180 | People: 7 | Score: 100 | Status: CRITICAL | Alerts: 2
+2026-03-21 21:30:30 - VisionIQ - INFO - User exit
+2026-03-21 21:30:30 - VisionIQ - INFO - Session ended | Total frames: 195 | Total alerts: 2

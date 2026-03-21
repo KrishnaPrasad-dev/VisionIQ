@@ -1,0 +1,11 @@
+2026-03-21 21:39:17 - VisionIQ - INFO - Starting VisionIQ
+2026-03-21 21:39:17 - VisionIQ - INFO - FPS: 25.0 | Resolution: 848x478 | Process Every N: 2
+2026-03-21 21:39:17 - VisionIQ - INFO - Config: {
+  "camera_id": "cam_1",
+  "zones": [],
+  "rules": {
+    "maxPeople": 2,
+    "restrictedAccess": false
+  }
+}
+2026-03-21 21:39:29 - VisionIQ - INFO - Frame 60 | UI FPS: 4.9 | DET FPS: 2.4 | Status: SAFE | Score: 3 | People: 1 | Alerts: 0

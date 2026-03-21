@@ -1,0 +1,12 @@
+{
+  "id": "alert_20260321_214152_533697",
+  "timestamp": "2026-03-21T21:41:52.533697",
+  "type": "THREAT_DETECTED",
+  "threat_score": 90,
+  "threat_status": "CRITICAL",
+  "people_count": 4,
+  "loitering_detected": false,
+  "zone_hits": [],
+  "snapshot_path": "alerts\\snapshots\\alert_20260321_214152_533697.jpg",
+  "uploaded": false
+}

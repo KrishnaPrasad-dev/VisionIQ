@@ -1,43 +1,154 @@
-def calculate_threat_score(people_count, zone_hits, loitering, rules):
+from scoring.score_smoother import apply_score_decay
 
+
+ZONE_LEVEL_SCORE = {
+    "low": 8,
+    "medium": 16,
+    "high": 26,
+    "critical": 40,
+}
+
+
+def calculate_threat_score(
+    people_count,
+    zone_hits,
+    loitering,
+    rules,
+    loitering_count=0,
+    running_count=0,
+    vandalism=False,
+    vandalism_confidence=0.0,
+    track_stability=1.0,
+    avg_velocity=0.0,
+):
+    """
+    Enhanced threat scoring with better accuracy
+    
+    Args:
+        people_count: Number of people detected
+        zone_hits: List of zone violations
+        loitering: Boolean for loitering detection
+        rules: Camera rules (maxPeople, restrictedAccess, etc)
+        loitering_count: Number of loitering people
+    """
     score = 0
 
-    # -------------------------------
-    # CROWD DENSITY
-    # -------------------------------
+    # Get mode (default to SHOP if not in rules)
+    mode = rules.get("mode", "SHOP")
+    MODE_WEIGHTS = {
+        "SHOP": {
+            "person": 3,
+            "loitering": 8,
+            "running": 12,
+            "panic": 18,
+            "abandoned": 25
+        },
+        "OFFICE": {
+            "person": 6,
+            "loitering": 15,
+            "running": 18,
+            "panic": 22,
+            "abandoned": 25
+        },
+        "WAREHOUSE": {
+            "person": 10,
+            "loitering": 10,
+            "running": 20,
+            "panic": 25,
+            "abandoned": 30
+        }
+    }
+    mode_weights = MODE_WEIGHTS.get(mode, MODE_WEIGHTS["SHOP"])
+
+    # ========================================
+    # BASE SCORE: people presence
+    person_weight = mode_weights.get("person", 3)
+    score += people_count * person_weight
+
+    # ========================================
+    # CROWD DENSITY THREAT
     max_people = rules.get("maxPeople", 5)
 
     if people_count > max_people:
         overflow = people_count - max_people
-        score += min(overflow * 10, 40)
+        overflow_threat = min((overflow ** 1.35) * 18, 55)
+        score += overflow_threat
 
-    # -------------------------------
-    # RESTRICTED ACCESS
-    # -------------------------------
-    if rules.get("restrictedAccess"):
-        if people_count > 0:
-            score += 50
+    # Hard overcrowding escalation for high overflow ratio
+    if max_people > 0 and people_count >= int(max_people * 1.7):
+        score += 18
 
-    # -------------------------------
-    # ZONES
-    # -------------------------------
+    # ========================================
+    # RESTRICTED AREA VIOLATION
+    if rules.get("restrictedAccess") and people_count > 0:
+        score += 60
+
+    # ========================================
+    # ZONE-BASED THREATS
+    zone_threat_total = 0
     for hit in zone_hits:
-        score += hit.get("threat", 1) * 10
+        threat_level = str(hit.get("threat", "low")).lower()
+        zone_threat_total += ZONE_LEVEL_SCORE.get(threat_level, 8)
 
-    # -------------------------------
-    # LOITERING
-    # -------------------------------
+    score += min(zone_threat_total, 50)
+
+    # ========================================
+    # LOITERING DETECTION
     if loitering:
-        score += 20
+        loiter_weight = mode_weights.get("loitering", 8)
+        loiter_score = loiter_weight * (1 + loitering_count * 0.5)
+        score += min(loiter_score, 40)
 
-    return min(score, 100)
+    # RUNNING BEHAVIOR
+    if running_count > 0:
+        run_weight = mode_weights.get("running", 12)
+        score += min(run_weight * running_count, 45)
+
+    # Asset damage / vandalism behavior
+    if vandalism:
+        vandal_weight = mode_weights.get("abandoned", 25)
+        score += vandal_weight + min(20, 25 * float(max(0.0, min(vandalism_confidence, 1.0))))
+
+    # Fast global movement indicates panic-like behavior
+    if avg_velocity >= 18:
+        score += mode_weights.get("panic", 18)
+
+    # ========================================
+    # THREAT LEVEL ESCALATION
+    threat_indicators = sum([
+        people_count > max_people,
+        rules.get("restrictedAccess", False),
+        len(zone_hits) > 0,
+        loitering,
+        running_count > 0,
+        vandalism,
+    ])
+
+    if threat_indicators >= 2:
+        score += 12
+    if threat_indicators >= 3:
+        score += 10
+
+    # ========================================
+    # Lower confidence tracking slightly reduces raw score.
+    confidence_factor = 0.85 + 0.15 * max(0.0, min(track_stability, 1.0))
+    score *= confidence_factor
+
+    score = min(max(score, 0), 100)
+    return int(round(apply_score_decay(score)))
 
 
 def get_status(score):
-
-    if score >= 70:
+    """
+    Enhanced status determination with better granularity
+    """
+    if score >= 75:
+        return "CRITICAL"
+    elif score >= 60:
         return "DANGER"
-    elif score >= 30:
+    elif score >= 40:
         return "WARNING"
+    elif score >= 20:
+        return "ALERT"
     else:
         return "SAFE"

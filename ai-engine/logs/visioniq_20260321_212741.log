@@ -1,0 +1,9 @@
+2026-03-21 21:27:41 - VisionIQ - INFO - Starting VisionIQ - FPS: 25.0
+2026-03-21 21:27:41 - VisionIQ - INFO - Config: {
+  "camera_id": "cam_1",
+  "zones": [],
+  "rules": {
+    "maxPeople": 2,
+    "restrictedAccess": false
+  }
+}

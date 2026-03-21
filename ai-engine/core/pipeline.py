@@ -1,7 +1,197 @@
 import cv2
+import numpy as np
 
 from detection.detector import detector
 from core.threat import calculate_threat_score, get_status
+from motion.motion_detector import MotionDetector
+
+
+class FrameHistory:
+    """Simple centroid tracker for loitering and running behavior."""
+
+    def __init__(
+        self,
+        fps=15,
+        max_history=30,
+        match_distance=90,
+        max_missed=8,
+        loiter_seconds=3,
+        loiter_speed=2.0,
+        running_speed=13.0,
+    ):
+        self.fps = max(1, int(fps))
+        self.max_history = max_history
+        self.match_distance = match_distance
+        self.max_missed = max_missed
+        self.loiter_frames = int(loiter_seconds * self.fps)
+        self.loiter_speed = loiter_speed
+        self.running_speed = running_speed
+        self.next_id = 0
+        self.tracks = {}
+
+    def _distance(self, p1, p2):
+        return float(np.hypot(p1[0] - p2[0], p1[1] - p2[1]))
+
+    def _new_track(self, center):
+        self.tracks[self.next_id] = {
+            "positions": [center],
+            "velocity": 0.0,
+            "missed": 0,
+            "dwell_frames": 0,
+            "seen_frames": 1,
+        }
+        self.next_id += 1
+
+    def update(self, detections):
+        centers = []
+        for det in detections:
+            x1, y1, x2, y2 = det["bbox"]
+            centers.append((int((x1 + x2) / 2), int((y1 + y2) / 2)))
+
+        assigned_tracks = set()
+        assigned_dets = set()
+
+        if self.tracks and centers:
+            candidates = []
+            for tid, track in self.tracks.items():
+                last = track["positions"][-1]
+                for di, c in enumerate(centers):
+                    dist = self._distance(last, c)
+                    if dist <= self.match_distance:
+                        candidates.append((dist, tid, di))
+
+            candidates.sort(key=lambda x: x[0])
+            for dist, tid, di in candidates:
+                if tid in assigned_tracks or di in assigned_dets:
+                    continue
+                track = self.tracks[tid]
+                prev = track["positions"][-1]
+                track["positions"].append(centers[di])
+                if len(track["positions"]) > self.max_history:
+                    track["positions"].pop(0)
+
+                inst_speed = self._distance(prev, centers[di])
+                track["velocity"] = 0.65 * track["velocity"] + 0.35 * inst_speed
+                track["seen_frames"] += 1
+                track["missed"] = 0
+
+                if track["velocity"] <= self.loiter_speed:
+                    track["dwell_frames"] += 1
+                else:
+                    track["dwell_frames"] = 0
+
+                assigned_tracks.add(tid)
+                assigned_dets.add(di)
+
+        for di, c in enumerate(centers):
+            if di not in assigned_dets:
+                self._new_track(c)
+
+        to_delete = []
+        for tid, track in self.tracks.items():
+            if tid not in assigned_tracks and track["positions"]:
+                track["missed"] += 1
+                if track["missed"] > self.max_missed:
+                    to_delete.append(tid)
+        for tid in to_delete:
+            del self.tracks[tid]
+
+        loitering_ids = []
+        running_ids = []
+        velocities = []
+        for tid, track in self.tracks.items():
+            velocities.append(track["velocity"])
+            if track["seen_frames"] >= 8 and track["dwell_frames"] >= self.loiter_frames:
+                loitering_ids.append(tid)
+            if track["seen_frames"] >= 5 and track["velocity"] >= self.running_speed:
+                running_ids.append(tid)
+
+        avg_velocity = float(np.mean(velocities)) if velocities else 0.0
+        return len(self.tracks), loitering_ids, running_ids, avg_velocity
+
+    def get_track_stability(self):
+        """Return confidence score based on track consistency"""
+        if not self.tracks:
+            return 0
+
+        avg_track_length = np.mean([len(track["positions"]) for track in self.tracks.values()])
+        return float(min(avg_track_length / 20.0, 1.0))
+
+
+class AssetDamageDetector:
+    """Detect likely table breakage/tampering from table disappearance + motion."""
+
+    def __init__(self):
+        self.baseline_area = None
+        self.missing_frames = 0
+        self.last_table_boxes = []
+
+    def _iou(self, a, b):
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+        area_a = max(1, (ax2 - ax1) * (ay2 - ay1))
+        area_b = max(1, (bx2 - bx1) * (by2 - by1))
+        return inter / float(area_a + area_b - inter)
+
+    def update(self, tables, persons, motion_info, running_count, motion_detector_ref):
+        table_area = sum(t["area"] for t in tables)
+        motion_ratio = motion_info.get("motion_ratio", 0.0)
+        mask = motion_info.get("mask")
+
+        if tables:
+            self.missing_frames = 0
+            if self.baseline_area is None:
+                self.baseline_area = float(table_area)
+            else:
+                self.baseline_area = 0.92 * self.baseline_area + 0.08 * float(table_area)
+            self.last_table_boxes = [t["bbox"] for t in tables]
+        else:
+            if self.baseline_area is not None:
+                self.missing_frames += 1
+
+        if self.baseline_area is None:
+            return False, 0.0
+
+        drop_ratio = 1.0
+        if self.baseline_area > 0:
+            drop_ratio = max(0.0, min(1.0, table_area / self.baseline_area))
+
+        # Person near table region
+        person_near_table = False
+        for p in persons:
+            pb = p["bbox"]
+            for tb in self.last_table_boxes:
+                if self._iou(pb, tb) > 0.02:
+                    person_near_table = True
+                    break
+            if person_near_table:
+                break
+
+        local_motion = 0.0
+        if mask is not None and self.last_table_boxes:
+            local_vals = [motion_detector_ref.motion_in_bbox(mask, b) for b in self.last_table_boxes]
+            if local_vals:
+                local_motion = float(np.mean(local_vals))
+
+        area_drop = drop_ratio < 0.55
+        sustained_missing = self.missing_frames >= 8
+        violent_motion = motion_ratio > 0.035 or local_motion > 0.06
+        aggressive_context = running_count > 0 or person_near_table
+
+        suspected = (area_drop or sustained_missing) and violent_motion and aggressive_context
+        confidence = 0.0
+        if suspected:
+            confidence = min(1.0, (1 - drop_ratio) * 0.55 + local_motion * 2.2 + motion_ratio * 0.7)
+        return suspected, confidence
+
+
+# Global frame history tracker
+frame_history = FrameHistory(fps=15)
+motion_detector = MotionDetector(threshold=4500)
+asset_damage_detector = AssetDamageDetector()
 
 
 def process_frame(frame, camera_config):
@@ -11,6 +201,21 @@ def process_frame(frame, camera_config):
     # -------------------------------
     detections = detector.detect(frame)
     persons = [d for d in detections if d["class"] == "person"]
+    tables = [d for d in detections if d["class"] in ("dining table", "table")]
+
+    motion_info = motion_detector.detect(frame, return_mask=True)
+
+    # -------------------------------
+    # TEMPORAL TRACKING & LOITERING
+    # -------------------------------
+    stable_person_count, loitering_ids, running_ids, avg_velocity = frame_history.update(persons)
+    table_breakage, breakage_confidence = asset_damage_detector.update(
+        tables=tables,
+        persons=persons,
+        motion_info=motion_info,
+        running_count=len(running_ids),
+        motion_detector_ref=motion_detector,
+    )
 
     # -------------------------------
     # ZONES
@@ -24,21 +229,23 @@ def process_frame(frame, camera_config):
         cy = int(y2)
 
         for zone in camera_config.get("zones", []):
-            polygon = zone["coordinates"]
+            polygon = np.array(zone.get("coordinates", []), dtype=np.int32)
+            if polygon.size == 0:
+                continue
 
-            inside = cv2.pointPolygonTest(polygon, (cx, cy), False)
+            inside = cv2.pointPolygonTest(polygon, (float(cx), float(cy)), False)
 
             if inside >= 0:
                 zone_hits.append({
                     "zone": zone["name"],
-                    "threat": zone.get("threat_level", 1)
+                    "threat": zone.get("threat_level", "low")
                 })
 
     # -------------------------------
     # METRICS
     # -------------------------------
     people_count = len(persons)
-    loiter_alerts = []
+    loiter_alerts = len(loitering_ids) > 0
 
     # -------------------------------
     # THREAT SCORE
@@ -47,7 +254,13 @@ def process_frame(frame, camera_config):
         people_count=people_count,
         zone_hits=zone_hits,
         loitering=loiter_alerts,
-        rules=camera_config["rules"]
+        rules=camera_config["rules"],
+        loitering_count=len(loitering_ids),
+        running_count=len(running_ids),
+        vandalism=table_breakage,
+        vandalism_confidence=breakage_confidence,
+        track_stability=frame_history.get_track_stability(),
+        avg_velocity=avg_velocity,
     )
 
     status = get_status(score)
@@ -56,10 +269,20 @@ def process_frame(frame, camera_config):
         "frame": frame,
         "detections": persons,
         "people_count": people_count,
+        "stable_person_count": stable_person_count,
         "zone_hits": zone_hits,
+        "tables_count": len(tables),
         "loitering": loiter_alerts,
+        "loitering_ids": loitering_ids,
+        "running": len(running_ids) > 0,
+        "running_ids": running_ids,
+        "table_breakage": table_breakage,
+        "table_breakage_confidence": breakage_confidence,
+        "motion_ratio": motion_info.get("motion_ratio", 0.0),
+        "avg_velocity": avg_velocity,
         "score": score,
-        "status": status
+        "status": status,
+        "track_stability": frame_history.get_track_stability()
     }
 
 
@@ -73,13 +296,21 @@ def draw_overlay(frame, result, events):
         x1, y1, x2, y2 = det["bbox"]
         conf = det["confidence"]
 
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        color = (0, 255, 0)  # Green for safe
+        if result["status"] == "WARNING":
+            color = (0, 255, 255)  # Yellow
+        elif result["status"] == "DANGER":
+            color = (0, 0, 255)  # Red
+        elif result["status"] == "CRITICAL":
+            color = (0, 0, 180)
 
-        cv2.putText(frame, f"{conf:.2f}",
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+
+        cv2.putText(frame, f"P:{conf:.2f}",
                     (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
-                    (0, 255, 0),
+                    color,
                     2)
 
     # PEOPLE COUNT
@@ -91,6 +322,34 @@ def draw_overlay(frame, result, events):
                 (255, 255, 255),
                 2)
 
+    # LOITERING ALERT
+    if result["loitering"]:
+        cv2.putText(frame,
+                    f"LOITERING DETECTED ({len(result['loitering_ids'])})",
+                    (20, 80),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (0, 0, 255),
+                    2)
+
+    if result.get("running"):
+        cv2.putText(frame,
+                    f"RUNNING DETECTED ({len(result.get('running_ids', []))})",
+                    (20, 110),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (0, 0, 255),
+                    2)
+
+    if result.get("table_breakage"):
+        cv2.putText(frame,
+                    f"TABLE DAMAGE SUSPECTED ({result.get('table_breakage_confidence', 0):.2f})",
+                    (20, 140),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (0, 0, 255),
+                    2)
+
     # STATUS
     status = result["status"]
 
@@ -99,10 +358,12 @@ def draw_overlay(frame, result, events):
         color = (0, 255, 255)
     elif status == "DANGER":
         color = (0, 0, 255)
+    elif status == "CRITICAL":
+        color = (0, 0, 180)
 
     cv2.putText(frame,
                 f"Status: {status}",
-                (20, 80),
+                (20, 175),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1,
                 color,
@@ -111,17 +372,17 @@ def draw_overlay(frame, result, events):
     # SCORE
     cv2.putText(frame,
                 f"Score: {result['score']}",
-                (20, 120),
+                (20, 215),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1,
                 (255, 255, 255),
                 2)
 
     # ALERTS
-    y = 160
+    y = 255
     for event in events:
         cv2.putText(frame,
-                    f"ALERT: {event['type']}",
+                    f"ALERT: {event['type']} ({event.get('severity', 'info')})",
                     (20, y),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.7,
