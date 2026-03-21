@@ -1,5 +1,4 @@
 import cv2
-import os
 import json
 from datetime import datetime
 from pathlib import Path
@@ -7,12 +6,23 @@ from pathlib import Path
 
 class AlertManager:
     """Manages alert history, snapshots, and cloud sync queue"""
-    
-    def __init__(self, base_path="alerts"):
+
+    def __init__(
+        self,
+        base_path="alerts",
+        snapshot_quality=65,
+        snapshot_max_width=960,
+        max_snapshot_files=300,
+        max_history_files=2000,
+    ):
         self.base_path = Path(base_path)
         self.snapshots_path = self.base_path / "snapshots"
         self.history_path = self.base_path / "history"
         self.queue_path = self.base_path / "queue"
+        self.snapshot_quality = int(snapshot_quality)
+        self.snapshot_max_width = int(snapshot_max_width)
+        self.max_snapshot_files = int(max_snapshot_files)
+        self.max_history_files = int(max_history_files)
         
         # Create directories
         for path in [self.snapshots_path, self.history_path, self.queue_path]:
@@ -21,6 +31,25 @@ class AlertManager:
         self.alert_history = []
         self.frame_count = 0
         self.last_alert_frame = -100  # Debounce alerts
+
+    def _compress_frame(self, frame):
+        """Downscale large frames before snapshot write to reduce file size."""
+        h, w = frame.shape[:2]
+        if w <= self.snapshot_max_width:
+            return frame
+
+        scale = self.snapshot_max_width / float(w)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    def _cleanup_by_count(self, folder_path, pattern, keep_count):
+        files = sorted(folder_path.glob(pattern), key=lambda p: p.stat().st_mtime)
+        overflow = len(files) - int(keep_count)
+        if overflow <= 0:
+            return
+        for old_file in files[:overflow]:
+            old_file.unlink(missing_ok=True)
         
     def should_alert(self, current_score, prev_score=0, min_frames_between=30):
         """
@@ -48,13 +77,14 @@ class AlertManager:
         Returns: alert_id for tracking
         """
         alert_id = f"alert_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-        
+
         # Save snapshot
         snapshot_path = self.snapshots_path / f"{alert_id}.jpg"
+        snapshot_frame = self._compress_frame(frame)
         success = cv2.imwrite(
             str(snapshot_path),
-            frame,
-            [cv2.IMWRITE_JPEG_QUALITY, 85]  # 85% quality to save space
+            snapshot_frame,
+            [cv2.IMWRITE_JPEG_QUALITY, self.snapshot_quality]
         )
         
         # Create alert record
@@ -76,13 +106,17 @@ class AlertManager:
         
         # Save to disk
         history_file = self.history_path / f"{alert_id}.json"
-        with open(history_file, 'w') as f:
-            json.dump(alert_record, f, indent=2)
+        with open(history_file, 'w', encoding='utf-8') as f:
+            json.dump(alert_record, f, separators=(",", ":"))
         
         # Add to cloud sync queue
         queue_file = self.queue_path / f"{alert_id}.json"
-        with open(queue_file, 'w') as f:
-            json.dump(alert_record, f, indent=2)
+        with open(queue_file, 'w', encoding='utf-8') as f:
+            json.dump(alert_record, f, separators=(",", ":"))
+
+        # Retention cleanup to prevent buildup
+        self._cleanup_by_count(self.snapshots_path, "*.jpg", self.max_snapshot_files)
+        self._cleanup_by_count(self.history_path, "*.json", self.max_history_files)
         
         return alert_id
     

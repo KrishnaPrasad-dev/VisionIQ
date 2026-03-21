@@ -53,6 +53,13 @@ class RulesEngine:
                 "confidence": round(float(data.get("table_breakage_confidence", 0.0)), 2),
             })
 
+        if data.get("baseline_ready") and float(data.get("anomaly_score", 0.0)) >= 0.55:
+            events.append({
+                "type": "abnormal_pattern",
+                "severity": "high",
+                "score": round(float(data.get("anomaly_score", 0.0)), 2),
+            })
+
         if data.get("status") == "CRITICAL":
             events.append({
                 "type": "critical_threat",

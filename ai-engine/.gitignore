@@ -1,0 +1,16 @@
+# Python cache/artifacts
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Local runtime outputs
+logs/
+alerts/history/
+alerts/queue/
+alerts/snapshots/
+alerts/baseline_profiles/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

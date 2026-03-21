@@ -1,8 +1,10 @@
 import cv2
 import numpy as np
+from datetime import datetime
 
 from detection.detector import detector
 from core.threat import calculate_threat_score, get_status
+from core.normal_behavior import normal_behavior_model
 from motion.motion_detector import MotionDetector
 
 
@@ -247,6 +249,41 @@ def process_frame(frame, camera_config):
     people_count = len(persons)
     loiter_alerts = len(loitering_ids) > 0
 
+    metrics = {
+        "people_count": people_count,
+        "motion_ratio": motion_info.get("motion_ratio", 0.0),
+        "avg_velocity": avg_velocity,
+        "running_count": len(running_ids),
+        "loitering_count": len(loitering_ids),
+    }
+
+    now = datetime.now()
+    camera_id = camera_config.get("camera_id", "default")
+
+    baseline = normal_behavior_model.score(camera_id=camera_id, metrics=metrics, ts=now)
+    anomaly_score = baseline["anomaly_score"]
+    baseline_ready = baseline["baseline_ready"]
+    baseline_samples = baseline["baseline_samples"]
+
+    # Learn from low-risk frames only to avoid training on attacks/anomalies.
+    rules = camera_config.get("rules", {})
+    max_people = int(rules.get("maxPeople", 5))
+    low_risk_frame = (
+        people_count <= max_people
+        and len(zone_hits) == 0
+        and len(running_ids) == 0
+        and not loiter_alerts
+        and not table_breakage
+        and motion_info.get("motion_ratio", 0.0) < 0.08
+    )
+    if rules.get("adaptiveLearning", True):
+        normal_behavior_model.update(
+            camera_id=camera_id,
+            metrics=metrics,
+            ts=now,
+            allow_learning=low_risk_frame,
+        )
+
     # -------------------------------
     # THREAT SCORE
     # -------------------------------
@@ -259,6 +296,8 @@ def process_frame(frame, camera_config):
         running_count=len(running_ids),
         vandalism=table_breakage,
         vandalism_confidence=breakage_confidence,
+        anomaly_score=anomaly_score,
+        baseline_ready=baseline_ready,
         track_stability=frame_history.get_track_stability(),
         avg_velocity=avg_velocity,
     )
@@ -279,6 +318,10 @@ def process_frame(frame, camera_config):
         "table_breakage": table_breakage,
         "table_breakage_confidence": breakage_confidence,
         "motion_ratio": motion_info.get("motion_ratio", 0.0),
+        "anomaly_score": anomaly_score,
+        "baseline_ready": baseline_ready,
+        "baseline_samples": baseline_samples,
+        "learning_frame_used": low_risk_frame,
         "avg_velocity": avg_velocity,
         "score": score,
         "status": status,
@@ -378,8 +421,17 @@ def draw_overlay(frame, result, events):
                 (255, 255, 255),
                 2)
 
+    learn_tag = "READY" if result.get("baseline_ready") else "LEARNING"
+    cv2.putText(frame,
+                f"Anomaly: {result.get('anomaly_score', 0.0):.2f} | Baseline: {learn_tag}",
+                (20, 245),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (255, 255, 255),
+                2)
+
     # ALERTS
-    y = 255
+    y = 275
     for event in events:
         cv2.putText(frame,
                     f"ALERT: {event['type']} ({event.get('severity', 'info')})",

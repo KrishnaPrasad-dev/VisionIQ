@@ -3,6 +3,7 @@ import json
 import time
 
 from core.pipeline import process_frame, draw_overlay
+from core.normal_behavior import normal_behavior_model
 from core.rules_engine import RulesEngine
 from alerts.alert_manager import alert_manager
 from utils.logger import setup_logger
@@ -12,7 +13,7 @@ logger = setup_logger("VisionIQ")
 
 def main():
 
-    cap = cv2.VideoCapture("test_videos/test2.mp4")
+    cap = cv2.VideoCapture("test_videos/test3.mp4")
 
     if not cap.isOpened():
         logger.error("Could not open video source")
@@ -43,7 +44,9 @@ def main():
         "zones": [],
         "rules": {
             "maxPeople": 2,
-            "restrictedAccess": False
+            "restrictedAccess": False,
+            "adaptiveLearning": True,
+            "mode": "SHOP",
         }
     }
 
@@ -119,10 +122,11 @@ def main():
             current_fps = fps_counter / elapsed
             stats = alert_manager.get_stats()
             det_fps = detection_frame_count / max(time.time() - app_start_time, 0.001)
+            baseline_samples = last_result.get("baseline_samples", 0)
             logger.info(
                 f"Frame {frame_count} | UI FPS: {current_fps:.1f} | DET FPS: {det_fps:.1f} | "
                 f"Status: {last_result.get('status', 'SAFE')} | Score: {last_result.get('score', 0)} | "
-                f"People: {last_result.get('people_count', 0)} | Alerts: {stats['total_alerts']}"
+                f"People: {last_result.get('people_count', 0)} | BaselineSamples: {baseline_samples} | Alerts: {stats['total_alerts']}"
             )
             fps_counter = 0
             fps_window_start = time.time()
@@ -137,6 +141,7 @@ def main():
     # Cleanup
     cap.release()
     cv2.destroyAllWindows()
+    normal_behavior_model.flush(camera_config.get("camera_id", "default"))
     
     # Final stats
     final_stats = alert_manager.get_stats()

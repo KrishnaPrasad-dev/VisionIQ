@@ -18,6 +18,8 @@ def calculate_threat_score(
     running_count=0,
     vandalism=False,
     vandalism_confidence=0.0,
+    anomaly_score=0.0,
+    baseline_ready=True,
     track_stability=1.0,
     avg_velocity=0.0,
 ):
@@ -112,6 +114,22 @@ def calculate_threat_score(
     # Fast global movement indicates panic-like behavior
     if avg_velocity >= 18:
         score += mode_weights.get("panic", 18)
+
+    # Baseline anomaly contributes once profile is ready.
+    if baseline_ready:
+        score += min(24, max(0.0, anomaly_score) * 28)
+    else:
+        # During warm-up, avoid aggressive scores unless there are strong explicit signals.
+        score *= 0.88
+        strong_signals = (
+            int(vandalism)
+            + int(running_count > 0)
+            + int(people_count > max_people)
+            + int(len(zone_hits) > 0)
+            + int(rules.get("restrictedAccess", False) and people_count > 0)
+        )
+        if strong_signals == 0:
+            score *= 0.75
 
     # ========================================
     # THREAT LEVEL ESCALATION
