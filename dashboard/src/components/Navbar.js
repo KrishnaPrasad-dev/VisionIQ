@@ -42,6 +42,13 @@ export default function Navbar() {
             Alerts
           </a>
 
+          <a
+            href="/login"
+            className="hover:text-green-400 transition duration-200"
+          >
+            Login
+          </a>
+
         </div>
 
       </div>

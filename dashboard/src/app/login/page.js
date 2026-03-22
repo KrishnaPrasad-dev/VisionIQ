@@ -24,6 +24,9 @@ export default function LoginPage() {
     const data = await res.json();
 
     if (res.ok) {
+      if (data.token) {
+        localStorage.setItem("visioniq_token", data.token)
+      }
       router.push("/dashboard");
     } else {
       alert(data.error || "Login failed ❌");
