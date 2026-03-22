@@ -1,6 +1,6 @@
-import { connectDB } from "@/lib/db"
-import { getUserIdFromRequest } from "@/lib/auth"
-import Camera from "@/models/Camera"
+import { connectDB } from "../../../lib/db"
+import { getUserIdFromRequest } from "../../../lib/auth"
+import Camera from "../../../models/Camera"
 
 export async function GET(req) {
   try {
@@ -34,9 +34,9 @@ export async function POST(req) {
       location: body.location
     })
 
-    // 🔥 Notify AI Engine
+    // Notify AI stream service to start this camera source
     try {
-      await fetch("http://localhost:5000/start-camera", {
+      await fetch("http://localhost:8000/start-camera", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
