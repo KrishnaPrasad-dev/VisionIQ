@@ -41,7 +41,8 @@ function CameraModel() {
 
   useFrame(() => {
     if (groupRef.current) {
-      groupRef.current.rotation.y = Math.sin(Date.now() * 0.001) * 0.4
+      // Match GridScan's 4-second cycle (2s scan + 2s delay) for synchronized "light from camera" effect
+      groupRef.current.rotation.y = Math.sin(Date.now() * 0.0016) * 0.4
     }
   })
 
@@ -59,33 +60,35 @@ function CameraModel() {
 
 export default function SecurityCameraModel() {
   return (
-    <div className="w-full h-screen">
+    <div className="w-full h-full min-h-[220px]">
       <Canvas camera={{ position: [3, 3, 7], fov: 45 }}>
 
         {/* ambient */}
-        <ambientLight intensity={0.8} />
+        <ambientLight intensity={1.15} />
 
         {/* main spotlight */}
         <spotLight
           position={[5, 8, 5]}
-          intensity={2.5}
+          intensity={3.2}
           angle={0.35}
           penumbra={1}
+          color="#ddffe9"
           castShadow
         />
 
         {/* fill light */}
         <directionalLight
           position={[-5, 5, -5]}
-          intensity={0.8}
+          intensity={1.2}
         />
 
         {/* rim light for depth */}
-        <pointLight position={[0, -3, 3]} intensity={0.4} color="#4ade80" />
+        <pointLight position={[0, -3, 3]} intensity={0.85} color="#86efac" />
+        <pointLight position={[0, 3, -2]} intensity={0.55} color="#ffffff" />
 
         <CameraModel />
 
-        <OrbitControls enableZoom={false} />
+        <OrbitControls enableZoom={false} enablePan={false} />
 
       </Canvas>
     </div>
