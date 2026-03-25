@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 import cv2
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from core.normal_behavior import normal_behavior_model
@@ -22,6 +22,10 @@ logger = setup_logger("VisionIQ-Stream")
 
 class StartCameraRequest(BaseModel):
     id: Optional[str] = None
+    source: str
+
+
+class TestSourceRequest(BaseModel):
     source: str
 
 
@@ -110,6 +114,53 @@ class StreamEngine:
         )
         self._thread.start()
 
+    def test_source(self, source: str):
+        """Validate a source without changing current running stream."""
+        if str(source).strip().lower().startswith("rtsp://"):
+            os.environ.setdefault(
+                "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                "rtsp_transport;tcp|stimeout;5000000",
+            )
+
+        src = self._coerce_source(source)
+        is_rtsp_source = str(source).strip().lower().startswith("rtsp://")
+
+        if is_rtsp_source:
+            if self._is_rtsp_tcp_reachable(str(source), timeout_sec=2.0):
+                cap, open_error = self._open_capture_with_timeout(src, timeout_sec=8.0)
+            else:
+                cap, open_error = None, "tcp-unreachable"
+        else:
+            cap = cv2.VideoCapture(src)
+            open_error = None if cap.isOpened() else "failed"
+            if not cap.isOpened():
+                cap.release()
+                cap = None
+
+        if cap is None:
+            return {
+                "ok": False,
+                "message": f"Could not open source: {source}",
+                "error": open_error,
+            }
+
+        try:
+            ok, _ = cap.read()
+            if not ok:
+                return {
+                    "ok": False,
+                    "message": "Source opened but no frame received",
+                    "error": "no-frame",
+                }
+        finally:
+            cap.release()
+
+        return {
+            "ok": True,
+            "message": "Source reachable",
+            "error": None,
+        }
+
     def stop(self):
         if self._thread and self._thread.is_alive():
             self._stop_event.set()
@@ -150,7 +201,11 @@ class StreamEngine:
 
         if cap is None:
             demo_video = os.path.join(os.path.dirname(__file__), "test_videos", "test3.mp4")
-            should_fallback = is_rtsp_source and os.path.exists(demo_video)
+            should_fallback = (
+                is_rtsp_source
+                and os.path.exists(demo_video)
+                and os.getenv("VISIONIQ_RTSP_FALLBACK", "0") == "1"
+            )
 
             if should_fallback:
                 logger.warning(
@@ -326,6 +381,14 @@ def start_camera(req: StartCameraRequest):
         "camera_id": str(camera_id),
         "source": req.source,
     }
+
+
+@app.post("/test-source")
+def test_source(req: TestSourceRequest):
+    result = engine.test_source(source=req.source)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result)
+    return result
 
 
 @app.post("/stop-camera")
