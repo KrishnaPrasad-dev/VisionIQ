@@ -272,7 +272,7 @@ class StreamEngine:
             "camera_id": camera_id,
             "zones": [],
             "rules": {
-                "maxPeople": 2,
+                "maxPeople": int(os.getenv("VISIONIQ_MAX_PEOPLE", "8")),
                 "restrictedAccess": False,
                 "adaptiveLearning": True,
                 "mode": "SHOP",

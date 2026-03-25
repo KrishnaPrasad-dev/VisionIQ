@@ -20,6 +20,7 @@ export default function CamerasPage() {
   const [search, setSearch] = useState("")
   const [typeFilter, setTypeFilter] = useState("all")
   const [phoneIp, setPhoneIp] = useState("")
+  const [selectedFile, setSelectedFile] = useState(null)
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -43,6 +44,34 @@ export default function CamerasPage() {
     }
 
     return source
+  }
+
+  async function uploadVideoAndGetSource() {
+    if (!selectedFile) {
+      throw new Error("Select a video file first")
+    }
+
+    const fd = new FormData()
+    fd.append("file", selectedFile)
+
+    const res = await fetch("/api/cameras/upload", {
+      method: "POST",
+      body: fd
+    })
+
+    const data = await res.json()
+    if (!data.success || !data.source) {
+      throw new Error(data.error || "Upload failed")
+    }
+
+    return data.source
+  }
+
+  async function resolveSourceForActions() {
+    if (type === "upload") {
+      return uploadVideoAndGetSource()
+    }
+    return normalizeSource(form.source, type)
   }
 
   const token = typeof window !== "undefined" ? localStorage.getItem("visioniq_token") : null
@@ -83,7 +112,7 @@ export default function CamerasPage() {
         return
       }
 
-      const resolvedSource = normalizeSource(form.source, type)
+      const resolvedSource = await resolveSourceForActions()
 
       const res = await fetch("/api/cameras", {
         method: "POST",
@@ -108,6 +137,7 @@ export default function CamerasPage() {
           source: "",
           location: ""
         })
+        setSelectedFile(null)
 
         await fetchCameras()
 
@@ -124,9 +154,9 @@ export default function CamerasPage() {
   }
 
   async function handleTestSource() {
-    const resolvedSource = normalizeSource(form.source, type)
+    const resolvedSource = await resolveSourceForActions()
 
-    if (!resolvedSource && type !== "upload") {
+    if (!resolvedSource) {
       alert("Add a source URL first")
       return
     }
@@ -422,8 +452,14 @@ export default function CamerasPage() {
               {type === "upload" && (
                 <input
                   type="file"
+                  accept="video/*"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                   className="w-full p-3 bg-black/40 border border-white/10 rounded-lg"
                 />
+              )}
+
+              {type === "upload" && selectedFile && (
+                <div className="text-xs text-gray-400">Selected: {selectedFile.name}</div>
               )}
 
               <input
@@ -439,7 +475,7 @@ export default function CamerasPage() {
             <div className="mt-6 flex gap-2">
               <button
                 onClick={handleTestSource}
-                disabled={loadingTest || type === "upload"}
+                disabled={loadingTest}
                 className="px-4 py-2 border border-white/20 rounded-xl text-sm disabled:opacity-50 hover:bg-white/5 transition"
               >
                 {loadingTest ? "Testing..." : "Test Connection"}

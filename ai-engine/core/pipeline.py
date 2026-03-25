@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import os
 from datetime import datetime
 
 from detection.detector import detector
@@ -191,9 +192,15 @@ class AssetDamageDetector:
 
 
 # Global frame history tracker
-frame_history = FrameHistory(fps=15)
+frame_history = FrameHistory(
+    fps=15,
+    loiter_seconds=float(os.getenv("VISIONIQ_LOITER_SECONDS", "12")),
+    loiter_speed=float(os.getenv("VISIONIQ_LOITER_SPEED", "1.5")),
+)
 motion_detector = MotionDetector(threshold=4500)
 asset_damage_detector = AssetDamageDetector()
+
+LOITER_MIN_COUNT = int(os.getenv("VISIONIQ_LOITER_MIN_COUNT", "2"))
 
 
 def process_frame(frame, camera_config):
@@ -247,7 +254,8 @@ def process_frame(frame, camera_config):
     # METRICS
     # -------------------------------
     people_count = len(persons)
-    loiter_alerts = len(loitering_ids) > 0
+    # Require at least 2 independent loitering tracks to reduce false positives in normal shop scenes.
+    loiter_alerts = len(loitering_ids) >= LOITER_MIN_COUNT
 
     metrics = {
         "people_count": people_count,

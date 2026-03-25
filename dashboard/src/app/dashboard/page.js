@@ -69,7 +69,7 @@ export default function DashboardPage(){
       <GridBackground/>
       <Navbar/>
 
-      <div className="max-w-7xl mx-auto pt-32 px-6">
+      <div className="max-w-7xl mx-auto pt-20 px-6">
 
         {/* HEADER */}
         <div className="flex justify-between items-center mb-10">
