@@ -1,7 +1,0 @@
-2026-03-25 20:17:17 - VisionIQ-Stream - ERROR - Could not open video source: rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov
-2026-03-25 20:19:51 - VisionIQ-Stream - ERROR - Could not open video source: rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov
-2026-03-25 20:27:29 - VisionIQ-Stream - ERROR - Could not open video source: https://192.168.29.188:8080
-2026-03-25 20:30:04 - VisionIQ-Stream - INFO - Stream engine started | camera_id=69c3f874d76cacf2d07d23fe | source=http://192.168.29.188:8080/video
-2026-03-25 20:31:34 - VisionIQ-Stream - WARNING - Failed to read frame from source
-2026-03-25 20:31:34 - VisionIQ-Stream - INFO - Stream engine stopped
-2026-03-25 20:34:43 - VisionIQ-Stream - INFO - Stream engine started | camera_id=69c3f98bd76cacf2d07d2407 | source=C:/Users/Lenovo/Desktop/VisionIQ/ai-engine/test_videos/uploads/1774451083175_test.mp4

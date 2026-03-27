@@ -4,6 +4,9 @@ from pathlib import Path
 from datetime import datetime
 
 
+AI_ENGINE_ROOT = Path(__file__).resolve().parent.parent
+
+
 def setup_logger(name="VisionIQ", log_dir="logs"):
     """
     Setup logger with console and file output
@@ -16,7 +19,7 @@ def setup_logger(name="VisionIQ", log_dir="logs"):
         Configured logger instance
     """
     # Create logs directory
-    log_path = Path(log_dir)
+    log_path = (AI_ENGINE_ROOT / log_dir).resolve()
     log_path.mkdir(exist_ok=True)
     
     # Create logger

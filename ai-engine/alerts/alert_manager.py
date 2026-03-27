@@ -4,6 +4,9 @@ from datetime import datetime
 from pathlib import Path
 
 
+AI_ENGINE_ROOT = Path(__file__).resolve().parent.parent
+
+
 class AlertManager:
     """Manages alert history, snapshots, and cloud sync queue"""
 
@@ -15,7 +18,7 @@ class AlertManager:
         max_snapshot_files=300,
         max_history_files=2000,
     ):
-        self.base_path = Path(base_path)
+        self.base_path = (AI_ENGINE_ROOT / base_path).resolve()
         self.snapshots_path = self.base_path / "snapshots"
         self.history_path = self.base_path / "history"
         self.queue_path = self.base_path / "queue"

@@ -3,6 +3,9 @@ from datetime import datetime
 from pathlib import Path
 
 
+AI_ENGINE_ROOT = Path(__file__).resolve().parent.parent
+
+
 METRIC_KEYS = [
     "people_count",
     "motion_ratio",
@@ -16,7 +19,7 @@ class NormalBehaviorModel:
     """Learns time-bucketed normal behavior and outputs anomaly score."""
 
     def __init__(self, storage_dir="alerts/baseline_profiles", min_samples=60):
-        self.storage_dir = Path(storage_dir)
+        self.storage_dir = (AI_ENGINE_ROOT / storage_dir).resolve()
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.min_samples = int(min_samples)
         self._profiles = {}
