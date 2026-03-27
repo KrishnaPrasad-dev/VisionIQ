@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState } from "react"
 import Navbar from "../../components/Navbar"
 import GridBackground from "../../components/GridBackground"
-import useVisionIQ from "../../hooks/useVisionIQ"
+import useQuantumEye from "../../hooks/useQuantumEye"
 
 export default function DashboardPage(){
 
-  const data = useVisionIQ()
+  const data = useQuantumEye()
   const [events, setEvents] = useState([])
   const [dismissed, setDismissed] = useState([])
   const [acknowledged, setAcknowledged] = useState([])
@@ -80,7 +80,7 @@ export default function DashboardPage(){
             </h1>
 
             <p className="text-gray-500 text-sm">
-              VisionIQ AI Surveillance
+              QuantumEye AI Surveillance
             </p>
           </div>
 

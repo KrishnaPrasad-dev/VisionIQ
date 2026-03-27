@@ -9,7 +9,7 @@ from alerts.alert_manager import alert_manager
 from utils.logger import setup_logger
 
 
-logger = setup_logger("VisionIQ")
+logger = setup_logger("QuantumEye")
 
 
 def _coerce_source(source):
@@ -71,7 +71,7 @@ def run_detection_loop(source, camera_id="cam_1", stop_event=None, on_status=Non
 
     rules_engine = RulesEngine(camera_config["rules"])
 
-    logger.info("Starting VisionIQ")
+    logger.info("Starting QuantumEye")
     logger.info(f"FPS: {fps} | Resolution: {width}x{height} | Process Every N: {process_every_n}")
     logger.info(f"Config: {json.dumps(camera_config, indent=2)}")
     if on_status:
@@ -180,7 +180,7 @@ def run_detection_loop(source, camera_id="cam_1", stop_event=None, on_status=Non
                 fps_counter = 0
                 fps_window_start = time.time()
 
-            cv2.imshow("VisionIQ - Press ESC to exit", display)
+            cv2.imshow("QuantumEye - Press ESC to exit", display)
 
             if cv2.waitKey(frame_delay) == 27:
                 logger.info("User exit from OpenCV window")

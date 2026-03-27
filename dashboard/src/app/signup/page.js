@@ -66,7 +66,7 @@ export default function SignupPage() {
 
             <p className="text-gray-400 text-lg">
               Monitor. Analyze. Detect threats in real time.
-              VisionIQ gives you intelligent control over your digital security space.
+              QuantumEye gives you intelligent control over your digital security space.
             </p>
 
             <div className="text-sm text-gray-500">

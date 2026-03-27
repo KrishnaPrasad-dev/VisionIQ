@@ -8,8 +8,8 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
 
         <Link href="/" className="text-2xl font-bold tracking-tight text-white">
-  Vision<span className="text-green-400">IQ</span>
-</Link>
+          Quantum<span className="text-green-400">Eye</span>
+        </Link>
 
         {/* Links */}
         <div className="flex gap-10 text-sm uppercase tracking-wider font-medium text-gray-200">

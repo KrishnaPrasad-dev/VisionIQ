@@ -1,4 +1,4 @@
-# VisionIQ Desktop App (MVP)
+# QuantumEye Desktop App (MVP)
 
 This desktop app wraps the existing AI engine with a simple native UI.
 
@@ -7,7 +7,7 @@ This desktop app wraps the existing AI engine with a simple native UI.
 - Sync cameras from website account
 - Start detection from the selected synced camera source
 - Start and stop detection from desktop controls
-- Uses existing VisionIQ pipeline, alerting, and overlays
+- Uses existing QuantumEye pipeline, alerting, and overlays
 - Keeps baseline learning and alert history behavior
 
 ## Run
@@ -32,7 +32,7 @@ python desktop_app.py
 
 ## Account Linking
 - Default website API base URL: `http://localhost:3000`
-- Desktop stores token locally in `%USERPROFILE%\\.visioniq\\auth.json`
+- Desktop stores token locally in `%USERPROFILE%\\.quantumeye\\auth.json`
 - Logout clears local token and camera cache
 
 ## Stop Session
@@ -49,11 +49,11 @@ pip install pyinstaller
 Build command:
 
 ```powershell
-pyinstaller --noconfirm --onefile --windowed --name VisionIQDesktop desktop_app.py
+pyinstaller --noconfirm --onefile --windowed --name QuantumEyeDesktop desktop_app.py
 ```
 
 Output executable:
-- `dist/VisionIQDesktop.exe`
+- `dist/QuantumEyeDesktop.exe`
 
 ## Notes
 - Ensure model file exists at `models/yolov8n.pt`

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 
 const WS_URL = "ws://localhost:8010/ws/stream"
 
-export default function useVisionIQ() {
+export default function useQuantumEye() {
 
   const [data, setData] = useState(null)
   const wsRef = useRef(null)

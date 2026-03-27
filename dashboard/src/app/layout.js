@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "VisionIQ",
+  title: "QuantumEye",
   description: "AI powered Surveillance system",
 };
 

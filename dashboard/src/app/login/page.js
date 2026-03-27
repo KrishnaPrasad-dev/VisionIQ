@@ -25,7 +25,7 @@ export default function LoginPage() {
 
     if (res.ok) {
       if (data.token) {
-        localStorage.setItem("visioniq_token", data.token)
+        localStorage.setItem("quantumeye_token", data.token)
       }
       router.push("/dashboard");
     } else {
@@ -57,7 +57,7 @@ export default function LoginPage() {
 
             <h1 className="text-4xl md:text-6xl font-bold leading-tight">
               Welcome back to{" "}
-              <span className="text-[#14eb55]">VisionIQ</span>
+              <span className="text-[#14eb55]">QuantumEye</span>
             </h1>
 
             <p className="text-gray-400 text-lg">

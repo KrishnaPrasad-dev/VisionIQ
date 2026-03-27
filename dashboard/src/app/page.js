@@ -21,13 +21,13 @@ export default function Home() {
           <div className="space-y-6 sm:space-y-8 text-center md:text-left">
 
             <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight leading-tight">
-              Vision<span className="text-green-400 drop-shadow-[0_0_6px_black]">IQ</span>
+              Quantum<span className="text-green-400 drop-shadow-[0_0_6px_black]">Eye</span>
             </h1>
 
             
 
             <p className="text-xl sm:text-xl text-gray-200 leading-relaxed">
-              VisionIQ is an AI-powered smart surveillance system that goes beyond traditional monitoring by analyzing visual data in real time.
+              QuantumEye is an AI-powered smart surveillance system that goes beyond traditional monitoring by analyzing visual data in real time.
             </p>
 
 
@@ -67,7 +67,7 @@ export default function Home() {
           {/* Section Header */}
           <div className="text-center mb-12 sm:mb-16 md:mb-24">
             <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold mb-4 md:mb-6 leading-tight">
-              How <span className="text-green-400">VisionIQ</span> Works
+              How <span className="text-green-400">QuantumEye</span> Works
             </h2>
             <p className="text-gray-300 text-sm sm:text-base md:text-lg max-w-2xl mx-auto leading-relaxed px-2">
               Deploy in minutes. Detect threats in milliseconds. Manage incidents in real-time.
@@ -85,7 +85,7 @@ export default function Home() {
               <CardTilt 
                 number="1"
                 title="Connect"
-                description="Add RTSP streams or IP cameras to your VisionIQ instance"
+                description="Add RTSP streams or IP cameras to your QuantumEye instance"
               />
 
               <CardTilt 

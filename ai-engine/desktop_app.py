@@ -11,10 +11,10 @@ import requests
 from app_runner import run_detection_loop
 
 
-class VisionIQDesktopApp:
+class QuantumEyeDesktopApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("VisionIQ Desktop")
+        self.root.title("QuantumEye Desktop")
         self.root.geometry("760x560")
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -32,7 +32,7 @@ class VisionIQDesktopApp:
         self.token = None
         self.cameras = []
 
-        appdata_root = Path.home() / ".visioniq"
+        appdata_root = Path.home() / ".quantumeye"
         appdata_root.mkdir(parents=True, exist_ok=True)
         self.auth_file = appdata_root / "auth.json"
         self._load_saved_auth()
@@ -76,7 +76,7 @@ class VisionIQDesktopApp:
         frame = tk.Frame(self.root, padx=14, pady=14)
         frame.pack(fill="both", expand=True)
 
-        title = tk.Label(frame, text="VisionIQ Desktop Controller", font=("Segoe UI", 16, "bold"))
+        title = tk.Label(frame, text="QuantumEye Desktop Controller", font=("Segoe UI", 16, "bold"))
         title.pack(anchor="w", pady=(0, 8))
 
         subtitle = tk.Label(
@@ -294,7 +294,7 @@ class VisionIQDesktopApp:
 
     def start_detection(self):
         if self.worker_thread and self.worker_thread.is_alive():
-            messagebox.showinfo("VisionIQ", "Detection is already running.")
+            messagebox.showinfo("QuantumEye", "Detection is already running.")
             return
 
         if not self.cameras:
@@ -345,7 +345,7 @@ class VisionIQDesktopApp:
 
 def main():
     root = tk.Tk()
-    VisionIQDesktopApp(root)
+    QuantumEyeDesktopApp(root)
     root.mainloop()
 
 

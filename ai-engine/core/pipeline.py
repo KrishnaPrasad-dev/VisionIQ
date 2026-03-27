@@ -194,13 +194,13 @@ class AssetDamageDetector:
 # Global frame history tracker
 frame_history = FrameHistory(
     fps=15,
-    loiter_seconds=float(os.getenv("VISIONIQ_LOITER_SECONDS", "12")),
-    loiter_speed=float(os.getenv("VISIONIQ_LOITER_SPEED", "1.5")),
+    loiter_seconds=float(os.getenv("QUANTUMEYE_LOITER_SECONDS", "12")),
+    loiter_speed=float(os.getenv("QUANTUMEYE_LOITER_SPEED", "1.5")),
 )
 motion_detector = MotionDetector(threshold=4500)
 asset_damage_detector = AssetDamageDetector()
 
-LOITER_MIN_COUNT = int(os.getenv("VISIONIQ_LOITER_MIN_COUNT", "2"))
+LOITER_MIN_COUNT = int(os.getenv("QUANTUMEYE_LOITER_MIN_COUNT", "2"))
 
 
 def process_frame(frame, camera_config):

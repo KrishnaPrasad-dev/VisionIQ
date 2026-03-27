@@ -2,7 +2,7 @@ import { connectDB } from "../../../lib/db"
 import { getUserIdFromRequest } from "../../../lib/auth"
 import Camera from "../../../models/Camera"
 
-const ENGINE_BASE = process.env.VISIONIQ_ENGINE_URL || "http://localhost:8010"
+const ENGINE_BASE = process.env.QUANTUMEYE_ENGINE_URL || "http://localhost:8010"
 
 async function notifyEngineStart(cameraId, source) {
   await fetch(`${ENGINE_BASE}/start-camera`, {

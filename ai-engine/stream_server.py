@@ -17,7 +17,7 @@ from core.rules_engine import RulesEngine
 from utils.logger import setup_logger
 
 
-logger = setup_logger("VisionIQ-Stream")
+logger = setup_logger("QuantumEye-Stream")
 
 
 class StartCameraRequest(BaseModel):
@@ -204,7 +204,7 @@ class StreamEngine:
             should_fallback = (
                 is_rtsp_source
                 and os.path.exists(demo_video)
-                and os.getenv("VISIONIQ_RTSP_FALLBACK", "0") == "1"
+                and os.getenv("QUANTUMEYE_RTSP_FALLBACK", "0") == "1"
             )
 
             if should_fallback:
@@ -272,7 +272,7 @@ class StreamEngine:
             "camera_id": camera_id,
             "zones": [],
             "rules": {
-                "maxPeople": int(os.getenv("VISIONIQ_MAX_PEOPLE", "8")),
+                "maxPeople": int(os.getenv("QUANTUMEYE_MAX_PEOPLE", "8")),
                 "restrictedAccess": False,
                 "adaptiveLearning": True,
                 "mode": "SHOP",
@@ -361,7 +361,7 @@ class StreamEngine:
             )
 
 
-app = FastAPI(title="VisionIQ Stream Service")
+app = FastAPI(title="QuantumEye Stream Service")
 engine = StreamEngine()
 
 
@@ -419,9 +419,9 @@ async def ws_stream(websocket: WebSocket):
 
 @app.on_event("startup")
 def startup_event():
-    default_source = os.getenv("VISIONIQ_SOURCE")
+    default_source = os.getenv("QUANTUMEYE_SOURCE")
     if default_source:
-        logger.info("Auto-starting default source from VISIONIQ_SOURCE")
+        logger.info("Auto-starting default source from QUANTUMEYE_SOURCE")
         engine.start(source=default_source, camera_id="cam_1")
 
 

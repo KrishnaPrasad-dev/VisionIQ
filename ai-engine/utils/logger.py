@@ -7,7 +7,7 @@ from datetime import datetime
 AI_ENGINE_ROOT = Path(__file__).resolve().parent.parent
 
 
-def setup_logger(name="VisionIQ", log_dir="logs"):
+def setup_logger(name="QuantumEye", log_dir="logs"):
     """
     Setup logger with console and file output
     
@@ -43,7 +43,7 @@ def setup_logger(name="VisionIQ", log_dir="logs"):
     logger.addHandler(console_handler)
     
     # File handler - DEBUG and above
-    log_filename = log_path / f"visioniq_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    log_filename = log_path / f"quantumeye_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     file_handler = logging.FileHandler(log_filename)
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
@@ -52,6 +52,6 @@ def setup_logger(name="VisionIQ", log_dir="logs"):
     return logger
 
 
-def get_logger(name="VisionIQ"):
+def get_logger(name="QuantumEye"):
     """Get existing logger"""
     return logging.getLogger(name)

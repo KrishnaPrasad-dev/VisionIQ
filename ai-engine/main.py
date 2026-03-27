@@ -7,9 +7,9 @@ from app_runner import run_detection_loop
 
 
 def _require_token(args):
-    token = args.token or os.getenv("VISIONIQ_TOKEN")
+    token = args.token or os.getenv("QUANTUMEYE_TOKEN")
     if not token:
-        raise ValueError("Missing token. Pass --token or set VISIONIQ_TOKEN")
+        raise ValueError("Missing token. Pass --token or set QUANTUMEYE_TOKEN")
     return token
 
 
@@ -83,7 +83,7 @@ def resolve_source_and_camera_id(args):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="VisionIQ detection runner")
+    parser = argparse.ArgumentParser(description="QuantumEye detection runner")
     parser.add_argument(
         "--source",
         default=None,
@@ -102,7 +102,7 @@ def parse_args():
     parser.add_argument(
         "--token",
         default=None,
-        help="JWT from website login API. Falls back to VISIONIQ_TOKEN env var",
+        help="JWT from website login API. Falls back to QUANTUMEYE_TOKEN env var",
     )
     parser.add_argument(
         "--website-camera-id",

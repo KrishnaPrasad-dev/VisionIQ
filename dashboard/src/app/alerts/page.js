@@ -2,7 +2,7 @@
 import { useState } from "react"
 import Navbar from "../../components/Navbar"
 import GridBackground from "../../components/GridBackground"
-import useVisionIQ from "../../hooks/useVisionIQ"
+import useQuantumEye from "../../hooks/useQuantumEye"
 
 const AI_ENGINE = "http://localhost:8000"
 
@@ -60,7 +60,7 @@ function SnapshotThumb({ path, status }) {
 }
 
 export default function AlertsPage() {
-  const data = useVisionIQ()
+  const data = useQuantumEye()
   const [filter, setFilter] = useState("ALL")
   const [view,   setView]   = useState("grid")
   const [modal,  setModal]  = useState(null)

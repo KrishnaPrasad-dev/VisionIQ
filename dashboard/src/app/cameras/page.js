@@ -74,7 +74,7 @@ export default function CamerasPage() {
     return normalizeSource(form.source, type)
   }
 
-  const token = typeof window !== "undefined" ? localStorage.getItem("visioniq_token") : null
+  const token = typeof window !== "undefined" ? localStorage.getItem("quantumeye_token") : null
 
   const fetchCameras = useCallback(async () => {
     if (!token) {
@@ -366,7 +366,7 @@ export default function CamerasPage() {
           <section className="rounded-2xl border border-white/10 bg-black/35 backdrop-blur p-5 h-fit lg:sticky lg:top-24 shadow-[0_10px_40px_rgba(0,0,0,0.35)]">
 
             <h2 className="text-xl text-green-400 font-semibold mb-1">Add Camera</h2>
-            <p className="text-gray-400 mb-6 text-sm">Connect a new video source to VisionIQ</p>
+            <p className="text-gray-400 mb-6 text-sm">Connect a new video source to QuantumEye</p>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-5">
 
