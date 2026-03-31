@@ -1,7 +1,29 @@
+"use client";
+
 import Link from "next/link"
+import { useEffect, useState, useCallback } from "react"
+import { useRouter } from "next/navigation"
 
 
 export default function Navbar() {
+  const router = useRouter()
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    const token = localStorage.getItem("authToken")
+    setIsLoggedIn(!!token)
+    setIsMounted(true)
+  }, [])
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem("authToken")
+    setIsLoggedIn(false)
+    router.push("/login")
+  }, [router])
+
+  if (!isMounted) return null
+
   return (
     <nav className="fixed top-0 left-0 w-full z-50 backdrop-blur-md bg-black/30 border-b border-white/10">
 
@@ -42,12 +64,21 @@ export default function Navbar() {
             Alerts
           </a>
 
-          <a
-            href="/login"
-            className="hover:text-green-400 transition duration-200"
-          >
-            Login
-          </a>
+          {isLoggedIn ? (
+            <button
+              onClick={handleLogout}
+              className="hover:text-red-400 transition duration-200 cursor-pointer"
+            >
+              Logout
+            </button>
+          ) : (
+            <a
+              href="/login"
+              className="hover:text-green-400 transition duration-200"
+            >
+              Login
+            </a>
+          )}
 
         </div>
 
