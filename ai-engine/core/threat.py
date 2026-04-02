@@ -152,6 +152,20 @@ def calculate_threat_score(
     confidence_factor = 0.85 + 0.15 * max(0.0, min(track_stability, 1.0))
     score *= confidence_factor
 
+    # Penalize weak, low-stability single-person signals to cut false positives.
+    if people_count <= 2 and track_stability < 0.35:
+        score *= 0.75
+
+    weak_signal_only = (
+        people_count <= 1
+        and len(zone_hits) == 0
+        and not loitering
+        and running_count == 0
+        and not vandalism
+    )
+    if weak_signal_only:
+        score *= 0.8
+
     score = min(max(score, 0), 100)
     return int(round(apply_score_decay(score)))
 

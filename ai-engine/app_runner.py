@@ -1,15 +1,27 @@
 import cv2
 import json
 import time
+import os
 
 from core.pipeline import process_frame, draw_overlay
 from core.normal_behavior import normal_behavior_model
 from core.rules_engine import RulesEngine
 from alerts.alert_manager import alert_manager
+from alerts.push_notifier import PushNotifier
 from utils.logger import setup_logger
 
 
 logger = setup_logger("QuantumEye")
+
+# Initialize push notifier (uses DASHBOARD_API_URL or defaults to localhost)
+dashboard_api_url = os.getenv("DASHBOARD_API_URL", "http://localhost:3000")
+push_notifier = PushNotifier(api_base_url=dashboard_api_url)
+
+# Prevent repeated alerts from the same incident cluster.
+ALERT_COOLDOWN_SEC = int(os.getenv("QUANTUMEYE_ALERT_COOLDOWN_SEC", "90"))
+ALERT_SCORE_DELTA = int(os.getenv("QUANTUMEYE_ALERT_SCORE_DELTA", "18"))
+ALERT_MIN_PERSISTENCE = int(os.getenv("QUANTUMEYE_ALERT_MIN_PERSISTENCE", "2"))
+_alert_gate_state = {}
 
 
 def _coerce_source(source):
@@ -106,6 +118,17 @@ def run_detection_loop(source, camera_id="cam_1", stop_event=None, on_status=Non
         "zone_hits": [],
     }
     last_events = []
+    alert_key = str(camera_id)
+
+    _alert_gate_state.setdefault(
+        alert_key,
+        {
+            "last_alert_ts": 0.0,
+            "last_alert_score": 0,
+            "consecutive_trigger_hits": 0,
+            "last_signature": None,
+        },
+    )
 
     try:
         while True:
@@ -133,9 +156,58 @@ def run_detection_loop(source, camera_id="cam_1", stop_event=None, on_status=Non
                 last_events = events
 
                 current_score = result["score"]
-                if alert_manager.should_alert(current_score, prev_score, min_frames_between=30):
+
+                current_signature = (
+                    result.get("status", "SAFE"),
+                    int(result.get("people_count", 0)),
+                    int(result.get("running_count", 0)),
+                    int(result.get("loitering_count", 0)),
+                    bool(result.get("table_breakage")),
+                    len(result.get("zone_hits", [])),
+                )
+
+                gate = _alert_gate_state[alert_key]
+                if current_score >= 60:
+                    gate["consecutive_trigger_hits"] += 1
+                else:
+                    gate["consecutive_trigger_hits"] = 0
+
+                score_jump = current_score - gate["last_alert_score"]
+                cooldown_ready = (time.time() - gate["last_alert_ts"]) >= ALERT_COOLDOWN_SEC
+                signature_changed = gate["last_signature"] != current_signature
+                strong_escalation = current_score >= 75 and score_jump >= 0
+                meaningful_realert = score_jump >= ALERT_SCORE_DELTA or signature_changed
+                persistence_ready = gate["consecutive_trigger_hits"] >= ALERT_MIN_PERSISTENCE
+
+                should_fire_alert = (
+                    current_score >= 60
+                    and persistence_ready
+                    and cooldown_ready
+                    and (strong_escalation or meaningful_realert)
+                )
+
+                if should_fire_alert and alert_manager.should_alert(current_score, prev_score, min_frames_between=1):
                     alert_id = alert_manager.create_alert(frame, result, alert_type="THREAT_DETECTED")
                     logger.warning(f"ALERT: {alert_id} | Score: {current_score} | Status: {result['status']}")
+                    gate["last_alert_ts"] = time.time()
+                    gate["last_alert_score"] = current_score
+                    gate["last_signature"] = current_signature
+                    gate["consecutive_trigger_hits"] = 0
+                    
+                    # Send push notification alongside existing alert (non-blocking)
+                    try:
+                        threat_level = "CRITICAL" if current_score >= 75 else "SUSPICIOUS" if current_score >= 45 else "INFO"
+                        message = f"Threat detected: {result.get('status', 'UNKNOWN')} (Score: {int(current_score)})"
+                        push_notifier.notify_alert(
+                            alert_type="THREAT_DETECTED",
+                            threat_score=current_score,
+                            camera_id=camera_id,
+                            message=message,
+                            deep_link="/dashboard",
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to send push notification: {e}")
+                    
                     if on_status:
                         on_status(
                             "alert",

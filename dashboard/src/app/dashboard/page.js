@@ -1,17 +1,28 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Navbar from "../../components/Navbar"
 import GridBackground from "../../components/GridBackground"
 import useQuantumEye from "../../hooks/useQuantumEye"
+import usePushNotifications from "../../hooks/usePushNotifications"
 
 export default function DashboardPage(){
 
+  const ALERT_COOLDOWN_MS = 15000
+
   const data = useQuantumEye()
+  usePushNotifications()
+
   const [events, setEvents] = useState([])
   const [dismissed, setDismissed] = useState([])
   const [acknowledged, setAcknowledged] = useState([])
   const [nowMs, setNowMs] = useState(Date.now())
+  const lastAlertRef = useRef({
+    at: 0,
+    status: "SAFE",
+    score: 0,
+    fingerprint: "",
+  })
 
   const score = data?.threat_score ?? 0
 
@@ -27,6 +38,7 @@ export default function DashboardPage(){
 
   useEffect(() => {
     if (!data) return
+
     const id = `${data?.ts ?? Date.now()}-${Math.round(data?.threat_score ?? 0)}-${data?.person_count ?? 0}`
     const item = {
       id,
@@ -46,6 +58,28 @@ export default function DashboardPage(){
           : (data?.threat_score ?? 0) >= 45
           ? "Suspicious pattern detected"
           : "Baseline monitoring"
+    }
+
+    if (item.status === "SAFE") {
+      return
+    }
+
+    const fingerprint = `${item.status}-${item.personCount}-${item.zoneTriggered}-${item.afterHours}`
+    const gate = lastAlertRef.current
+    const cooldownPassed = item.ts - gate.at >= ALERT_COOLDOWN_MS
+    const escalatedToCritical = gate.status !== "CRITICAL" && item.status === "CRITICAL"
+    const majorScoreShift = Math.abs(item.score - gate.score) >= 20
+    const changedPattern = gate.fingerprint !== fingerprint
+
+    if (!cooldownPassed && !escalatedToCritical && !majorScoreShift && !changedPattern) {
+      return
+    }
+
+    lastAlertRef.current = {
+      at: item.ts,
+      status: item.status,
+      score: item.score,
+      fingerprint,
     }
 
     setEvents(prev => {

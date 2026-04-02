@@ -1,6 +1,7 @@
 import torch
 from ultralytics import YOLO
 import numpy as np
+import os
 
 
 class PersonDetector:
@@ -34,6 +35,11 @@ class PersonDetector:
         print(f"YOLO ready on {self.device}")
         self.frame_count = 0
         self.target_classes = [0, 67]  # person, dining table
+        self.person_min_conf = float(os.getenv("QUANTUMEYE_PERSON_MIN_CONF", "0.32"))
+        self.person_min_area_px = int(os.getenv("QUANTUMEYE_PERSON_MIN_AREA", "650"))
+        self.person_min_area_ratio = float(os.getenv("QUANTUMEYE_PERSON_MIN_AREA_RATIO", "0.0006"))
+        self.table_min_conf = float(os.getenv("QUANTUMEYE_TABLE_MIN_CONF", "0.24"))
+        self.table_min_area_px = int(os.getenv("QUANTUMEYE_TABLE_MIN_AREA", "2200"))
 
     def _calculate_iou(self, box1, box2):
         """Calculate Intersection over Union between two boxes"""
@@ -55,6 +61,20 @@ class PersonDetector:
 
     def _apply_nms(self, detections, iou_threshold=0.5):
         """Apply Non-Maximum Suppression to remove overlapping detections"""
+        if not detections:
+            return detections
+
+        # Run NMS per class so overlapping person/table boxes do not suppress each other.
+        by_class = {}
+        for det in detections:
+            by_class.setdefault(det["class"], []).append(det)
+
+        kept_all = []
+        for _, class_dets in by_class.items():
+            kept_all.extend(self._nms_single_class(class_dets, iou_threshold=iou_threshold))
+        return kept_all
+
+    def _nms_single_class(self, detections, iou_threshold=0.5):
         if not detections:
             return detections
         
@@ -86,6 +106,12 @@ class PersonDetector:
             List of detections
         """
         self.frame_count += 1
+        frame_h, frame_w = frame.shape[:2]
+        frame_area = max(1, frame_h * frame_w)
+        adaptive_person_min_area = max(
+            self.person_min_area_px,
+            int(frame_area * self.person_min_area_ratio),
+        )
         
         results = self.model(
             frame, 
@@ -116,10 +142,18 @@ class PersonDetector:
                 # Filter out low confidence and very small boxes
                 box_area = (x2 - x1) * (y2 - y1)
                 if label == "person":
-                    if conf < 0.30 or box_area < 650:
+                    bw = max(1, x2 - x1)
+                    bh = max(1, y2 - y1)
+                    aspect_ratio = bw / float(bh)
+                    # Person boxes are typically taller than wide; filter implausible shapes.
+                    if aspect_ratio < 0.18 or aspect_ratio > 1.2:
+                        continue
+
+                    min_conf = self.person_min_conf + 0.08 if box_area < adaptive_person_min_area * 2 else self.person_min_conf
+                    if conf < min_conf or box_area < adaptive_person_min_area:
                         continue
                 elif label in ("dining table", "table"):
-                    if conf < 0.22 or box_area < 2200:
+                    if conf < self.table_min_conf or box_area < self.table_min_area_px:
                         continue
                 else:
                     continue

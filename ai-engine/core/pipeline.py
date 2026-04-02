@@ -102,15 +102,18 @@ class FrameHistory:
         loitering_ids = []
         running_ids = []
         velocities = []
+        confirmed_tracks = 0
         for tid, track in self.tracks.items():
             velocities.append(track["velocity"])
+            if track["seen_frames"] >= 3 and track["missed"] == 0:
+                confirmed_tracks += 1
             if track["seen_frames"] >= 8 and track["dwell_frames"] >= self.loiter_frames:
                 loitering_ids.append(tid)
             if track["seen_frames"] >= 5 and track["velocity"] >= self.running_speed:
                 running_ids.append(tid)
 
         avg_velocity = float(np.mean(velocities)) if velocities else 0.0
-        return len(self.tracks), loitering_ids, running_ids, avg_velocity
+        return confirmed_tracks, loitering_ids, running_ids, avg_velocity
 
     def get_track_stability(self):
         """Return confidence score based on track consistency"""
@@ -253,19 +256,24 @@ def process_frame(frame, camera_config):
     # -------------------------------
     # METRICS
     # -------------------------------
-    people_count = len(persons)
+    raw_people_count = len(persons)
+    # Prefer confirmed temporal tracks for scoring accuracy, but keep minimum responsiveness.
+    people_count = max(stable_person_count, min(raw_people_count, 1))
     # Require at least 2 independent loitering tracks to reduce false positives in normal shop scenes.
     loiter_alerts = len(loitering_ids) >= LOITER_MIN_COUNT
+    now = datetime.now()
 
     metrics = {
         "people_count": people_count,
+        "raw_people_count": raw_people_count,
         "motion_ratio": motion_info.get("motion_ratio", 0.0),
         "avg_velocity": avg_velocity,
         "running_count": len(running_ids),
         "loitering_count": len(loitering_ids),
+        "hour": now.hour,
+        "weekday": now.weekday(),
     }
 
-    now = datetime.now()
     camera_id = camera_config.get("camera_id", "default")
 
     baseline = normal_behavior_model.score(camera_id=camera_id, metrics=metrics, ts=now)
@@ -316,6 +324,7 @@ def process_frame(frame, camera_config):
         "frame": frame,
         "detections": persons,
         "people_count": people_count,
+        "raw_people_count": raw_people_count,
         "stable_person_count": stable_person_count,
         "zone_hits": zone_hits,
         "tables_count": len(tables),

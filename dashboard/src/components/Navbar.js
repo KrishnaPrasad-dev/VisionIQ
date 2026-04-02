@@ -1,8 +1,10 @@
+
 "use client";
 
 import Link from "next/link"
 import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import { Bell } from "lucide-react"
 
 
 export default function Navbar() {
@@ -63,6 +65,14 @@ export default function Navbar() {
           >
             Alerts
           </a>
+
+          <button
+            className="relative hover:text-green-400 transition duration-200 flex items-center justify-center"
+            title="Notifications"
+          >
+            <Bell size={20} />
+            <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
+          </button>
 
           {isLoggedIn ? (
             <button
