@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Navbar from "../../components/Navbar"
 import GridBackground from "../../components/GridBackground"
-import useQuantumEye from "../../hooks/useQuantumEye"
+import useVisionIQ from "../../hooks/useVisionIQ"
 import usePushNotifications from "../../hooks/usePushNotifications"
 
 export default function DashboardPage(){
 
   const ALERT_COOLDOWN_MS = 15000
 
-  const data = useQuantumEye()
+  const data = useVisionIQ()
   usePushNotifications()
 
   const [events, setEvents] = useState([])
@@ -114,7 +114,7 @@ export default function DashboardPage(){
             </h1>
 
             <p className="text-gray-500 text-sm">
-              QuantumEye AI Surveillance
+              VisionIQ AI Surveillance
             </p>
           </div>
 

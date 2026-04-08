@@ -32,7 +32,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
 
         <Link href="/" className="text-2xl font-bold tracking-tight text-white">
-          Quantum<span className="text-green-400">Eye</span>
+          Vision<span className="text-green-400">IQ</span>
         </Link>
 
         {/* Links */}
