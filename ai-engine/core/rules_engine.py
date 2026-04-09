@@ -7,7 +7,7 @@ class RulesEngine:
         events = []
         people_count = data["people_count"]
 
-        max_people = self.config.get("maxPeople")
+        max_people = self.config.get("maxPeopleAllowed", self.config.get("maxPeople"))
 
         if max_people and people_count > max_people:
             overflow = people_count - max_people
@@ -25,12 +25,22 @@ class RulesEngine:
                     "severity": "critical",
                 })
 
-        if self.config.get("restrictedAccess"):
+        restricted_zone = bool(self.config.get("restrictedZoneMonitoring") or self.config.get("restrictedAccess"))
+
+        if restricted_zone:
             if people_count > 0:
                 events.append({
-                    "type": "restricted_access",
+                    "type": "restricted_zone_breach",
                     "severity": "critical",
+                    "zone": self.config.get("zoneLabel") or "Restricted Zone",
                 })
+
+        if data.get("after_hours") and people_count > 0:
+            events.append({
+                "type": "after_hours_violation",
+                "severity": "high",
+                "zone": self.config.get("zoneLabel") or "Open Hours",
+            })
 
         if data.get("loitering"):
             events.append({

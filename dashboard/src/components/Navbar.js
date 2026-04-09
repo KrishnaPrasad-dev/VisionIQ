@@ -6,6 +6,8 @@ import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Bell } from "lucide-react"
 
+const TOKEN_KEYS = ["visioniq_token", "authToken", "quantumeye_token"]
+
 
 export default function Navbar() {
   const router = useRouter()
@@ -13,13 +15,13 @@ export default function Navbar() {
   const [isMounted, setIsMounted] = useState(false)
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
+    const token = TOKEN_KEYS.find(key => localStorage.getItem(key))
     setIsLoggedIn(!!token)
     setIsMounted(true)
   }, [])
 
   const handleLogout = useCallback(() => {
-    localStorage.removeItem("authToken")
+    TOKEN_KEYS.forEach(key => localStorage.removeItem(key))
     setIsLoggedIn(false)
     router.push("/login")
   }, [router])
@@ -38,37 +40,26 @@ export default function Navbar() {
         {/* Links */}
         <div className="flex gap-10 text-sm uppercase tracking-wider font-medium text-gray-200">
 
-          <a
-            href="#"
-            className="hover:text-green-400 transition duration-200"
-          >
+          <Link href="/" className="hover:text-green-400 transition duration-200">
             Home
-          </a>
+          </Link>
 
-          <a
-            href="/dashboard"
-            className="hover:text-green-400 transition duration-200"
-          >
+          <Link href="/dashboard" className="hover:text-green-400 transition duration-200">
             Dashboard
-          </a>
+          </Link>
 
-          <a
-            href="/cameras"
-            className="hover:text-green-400 transition duration-200"
-          >
+          <Link href="/cameras" className="hover:text-green-400 transition duration-200">
            Cameras
-          </a>
+          </Link>
 
-          <a
-            href="/alerts"
-            className="hover:text-green-400 transition duration-200"
-          >
+          <Link href="/alerts" className="hover:text-green-400 transition duration-200">
             Alerts
-          </a>
+          </Link>
 
           <button
             className="relative hover:text-green-400 transition duration-200 flex items-center justify-center"
             title="Notifications"
+            aria-label="Notifications"
           >
             <Bell size={20} />
             <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
@@ -82,12 +73,9 @@ export default function Navbar() {
               Logout
             </button>
           ) : (
-            <a
-              href="/login"
-              className="hover:text-green-400 transition duration-200"
-            >
+            <Link href="/login" className="hover:text-green-400 transition duration-200">
               Login
-            </a>
+            </Link>
           )}
 
         </div>

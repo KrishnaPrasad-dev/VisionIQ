@@ -26,6 +26,7 @@ export default function LoginPage() {
     if (res.ok) {
       if (data.token) {
         localStorage.setItem("visioniq_token", data.token)
+        localStorage.setItem("authToken", data.token)
         localStorage.removeItem("quantumeye_token")
       }
       router.push("/dashboard");

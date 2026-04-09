@@ -59,7 +59,7 @@ def _select_camera(cameras, camera_id=None, camera_name=None, camera_index=0):
 
 def resolve_source_and_camera_id(args):
     if args.source:
-        return args.source, args.camera_id
+        return args.source, args.camera_id, {}
 
     token = _require_token(args)
     cameras = _fetch_user_cameras(args.api_base, token)
@@ -79,7 +79,7 @@ def resolve_source_and_camera_id(args):
         f"Using website camera: name='{camera.get('name', 'Unnamed')}', "
         f"id='{camera.get('_id')}', type='{camera.get('type', 'rtsp')}'"
     )
-    return source, resolved_camera_id
+    return source, resolved_camera_id, camera.get("rules", {})
 
 
 def parse_args():
@@ -125,8 +125,8 @@ def parse_args():
 
 def main():
     args = parse_args()
-    source, camera_id = resolve_source_and_camera_id(args)
-    run_detection_loop(source=source, camera_id=camera_id)
+    source, camera_id, camera_rules = resolve_source_and_camera_id(args)
+    run_detection_loop(source=source, camera_id=camera_id, camera_rules=camera_rules)
 
 
 if __name__ == "__main__":

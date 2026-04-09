@@ -2,6 +2,7 @@ import cv2
 import json
 import time
 import os
+from collections import deque
 
 from core.pipeline import process_frame, draw_overlay
 from core.normal_behavior import normal_behavior_model
@@ -18,7 +19,7 @@ dashboard_api_url = os.getenv("DASHBOARD_API_URL", "http://localhost:3000")
 push_notifier = PushNotifier(api_base_url=dashboard_api_url)
 
 # Prevent repeated alerts from the same incident cluster.
-ALERT_COOLDOWN_SEC = int(os.getenv("QUANTUMEYE_ALERT_COOLDOWN_SEC", "90"))
+ALERT_COOLDOWN_SEC = int(os.getenv("QUANTUMEYE_ALERT_COOLDOWN_SEC", "300"))
 ALERT_SCORE_DELTA = int(os.getenv("QUANTUMEYE_ALERT_SCORE_DELTA", "18"))
 ALERT_MIN_PERSISTENCE = int(os.getenv("QUANTUMEYE_ALERT_MIN_PERSISTENCE", "2"))
 _alert_gate_state = {}
@@ -34,7 +35,7 @@ def _coerce_source(source):
     return value
 
 
-def run_detection_loop(source, camera_id="cam_1", stop_event=None, on_status=None):
+def run_detection_loop(source, camera_id="cam_1", camera_rules=None, stop_event=None, on_status=None):
     """Run realtime detection loop for a camera/video source.
 
     Args:
@@ -55,6 +56,7 @@ def run_detection_loop(source, camera_id="cam_1", stop_event=None, on_status=Non
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     frame_delay = int(1000 / max(fps, 1))
+    incident_buffer = deque(maxlen=max(10, int(max(float(fps), 1.0) * 8)))
 
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -70,14 +72,24 @@ def run_detection_loop(source, camera_id="cam_1", stop_event=None, on_status=Non
         height = int(height * scale_factor)
         logger.info(f"Resolution scaling: {original_width}x{original_height} -> {width}x{height}")
 
+    rules = camera_rules or {}
+    max_people = rules.get("maxPeopleAllowed", rules.get("maxPeople", 2))
+    restricted_zone = bool(rules.get("restrictedZoneMonitoring") or rules.get("restrictedAccess"))
+
     camera_config = {
         "camera_id": camera_id,
         "zones": [],
         "rules": {
-            "maxPeople": 2,
-            "restrictedAccess": False,
-            "adaptiveLearning": True,
-            "mode": "SHOP",
+            "maxPeople": max_people,
+            "maxPeopleAllowed": max_people,
+            "restrictedAccess": restricted_zone,
+            "restrictedZoneMonitoring": restricted_zone,
+            "adaptiveLearning": rules.get("adaptiveLearning", True),
+            "mode": rules.get("mode", "SHOP"),
+            "openHoursStart": rules.get("openHoursStart", ""),
+            "openHoursEnd": rules.get("openHoursEnd", ""),
+            "zoneLabel": rules.get("zoneLabel", ""),
+            "notes": rules.get("notes", ""),
         },
     }
 
@@ -187,7 +199,14 @@ def run_detection_loop(source, camera_id="cam_1", stop_event=None, on_status=Non
                 )
 
                 if should_fire_alert and alert_manager.should_alert(current_score, prev_score, min_frames_between=1):
-                    alert_id = alert_manager.create_alert(frame, result, alert_type="THREAT_DETECTED")
+                    alert_id = alert_manager.create_alert(
+                        frame=frame,
+                        result=result,
+                        alert_type="THREAT_DETECTED",
+                        clip_frames=list(incident_buffer),
+                        fps=float(fps),
+                        camera_id=str(camera_id),
+                    )
                     logger.warning(f"ALERT: {alert_id} | Score: {current_score} | Status: {result['status']}")
                     gate["last_alert_ts"] = time.time()
                     gate["last_alert_score"] = current_score
@@ -223,6 +242,7 @@ def run_detection_loop(source, camera_id="cam_1", stop_event=None, on_status=Non
             render_result = dict(last_result)
             render_result["frame"] = frame
             display = draw_overlay(frame.copy(), render_result, last_events)
+            incident_buffer.append(display.copy())
 
             fps_counter += 1
             elapsed = time.time() - fps_window_start

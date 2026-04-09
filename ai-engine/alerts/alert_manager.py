@@ -8,27 +8,27 @@ AI_ENGINE_ROOT = Path(__file__).resolve().parent.parent
 
 
 class AlertManager:
-    """Manages alert history, snapshots, and cloud sync queue"""
+    """Manages alert history, incident playback clips, and cloud sync queue."""
 
     def __init__(
         self,
         base_path="alerts",
-        snapshot_quality=65,
-        snapshot_max_width=960,
-        max_snapshot_files=300,
+        incident_quality=65,
+        media_max_width=960,
+        max_incident_files=300,
         max_history_files=2000,
     ):
         self.base_path = (AI_ENGINE_ROOT / base_path).resolve()
-        self.snapshots_path = self.base_path / "snapshots"
+        self.incidents_path = self.base_path / "incidents"
         self.history_path = self.base_path / "history"
         self.queue_path = self.base_path / "queue"
-        self.snapshot_quality = int(snapshot_quality)
-        self.snapshot_max_width = int(snapshot_max_width)
-        self.max_snapshot_files = int(max_snapshot_files)
+        self.incident_quality = int(incident_quality)
+        self.media_max_width = int(media_max_width)
+        self.max_incident_files = int(max_incident_files)
         self.max_history_files = int(max_history_files)
         
         # Create directories
-        for path in [self.snapshots_path, self.history_path, self.queue_path]:
+        for path in [self.incidents_path, self.history_path, self.queue_path]:
             path.mkdir(parents=True, exist_ok=True)
         
         self.alert_history = []
@@ -36,15 +36,47 @@ class AlertManager:
         self.last_alert_frame = -100  # Debounce alerts
 
     def _compress_frame(self, frame):
-        """Downscale large frames before snapshot write to reduce file size."""
+        """Downscale large frames before writing media files."""
         h, w = frame.shape[:2]
-        if w <= self.snapshot_max_width:
+        if w <= self.media_max_width:
             return frame
 
-        scale = self.snapshot_max_width / float(w)
+        scale = self.media_max_width / float(w)
         new_w = int(w * scale)
         new_h = int(h * scale)
         return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    def _write_incident_clip(self, alert_id, clip_frames=None, fps=15):
+        frames = list(clip_frames or [])
+        if not frames:
+            return None
+
+        prepared = [self._compress_frame(frame) for frame in frames if frame is not None]
+        if not prepared:
+            return None
+
+        first = prepared[0]
+        h, w = first.shape[:2]
+        output_path = self.incidents_path / f"{alert_id}.mp4"
+        writer = cv2.VideoWriter(
+            str(output_path),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            max(6.0, min(float(fps or 15), 30.0)),
+            (w, h),
+        )
+
+        if not writer.isOpened():
+            return None
+
+        try:
+            for frame in prepared:
+                if frame.shape[1] != w or frame.shape[0] != h:
+                    frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
+                writer.write(frame)
+        finally:
+            writer.release()
+
+        return output_path
 
     def _cleanup_by_count(self, folder_path, pattern, keep_count):
         files = sorted(folder_path.glob(pattern), key=lambda p: p.stat().st_mtime)
@@ -73,34 +105,39 @@ class AlertManager:
         
         return False
     
-    def create_alert(self, frame, result, alert_type="THREAT_DETECTED"):
+    def create_alert(self, frame, result, alert_type="THREAT_DETECTED", clip_frames=None, fps=15, camera_id=None):
         """
-        Create and save alert with snapshot
+        Create and save alert with incident playback clip
         
         Returns: alert_id for tracking
         """
         alert_id = f"alert_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
 
-        # Save snapshot
-        snapshot_path = self.snapshots_path / f"{alert_id}.jpg"
-        snapshot_frame = self._compress_frame(frame)
-        success = cv2.imwrite(
-            str(snapshot_path),
-            snapshot_frame,
-            [cv2.IMWRITE_JPEG_QUALITY, self.snapshot_quality]
-        )
+        clip_source = list(clip_frames or [])
+        if frame is not None:
+            clip_source.append(frame)
+        incident_path = self._write_incident_clip(alert_id, clip_frames=clip_source, fps=fps)
         
         # Create alert record
+        playback_path = None
+        if incident_path:
+            try:
+                playback_path = str(incident_path.relative_to(AI_ENGINE_ROOT)).replace("\\", "/")
+            except Exception:
+                playback_path = str(incident_path).replace("\\", "/")
+
         alert_record = {
             "id": alert_id,
             "timestamp": datetime.now().isoformat(),
             "type": alert_type,
+            "camera_id": str(camera_id) if camera_id is not None else None,
             "threat_score": result.get("score", 0),
             "threat_status": result.get("status", "UNKNOWN"),
             "people_count": result.get("people_count", 0),
             "loitering_detected": result.get("loitering", False),
             "zone_hits": result.get("zone_hits", []),
-            "snapshot_path": str(snapshot_path) if success else None,
+            "playback_path": playback_path,
+            "snapshot_path": None,
             "uploaded": False
         }
         
@@ -118,7 +155,7 @@ class AlertManager:
             json.dump(alert_record, f, separators=(",", ":"))
 
         # Retention cleanup to prevent buildup
-        self._cleanup_by_count(self.snapshots_path, "*.jpg", self.max_snapshot_files)
+        self._cleanup_by_count(self.incidents_path, "*.mp4", self.max_incident_files)
         self._cleanup_by_count(self.history_path, "*.json", self.max_history_files)
         
         return alert_id
@@ -154,15 +191,15 @@ class AlertManager:
                 json.dump(alert, f, indent=2)
     
     def cleanup_old_snapshots(self, days=7):
-        """Delete old snapshots to save space"""
+        """Delete old incident clips to save space (legacy method name)."""
         import time
         current_time = time.time()
         max_age = days * 24 * 3600
         
         deleted_count = 0
-        for snapshot in self.snapshots_path.glob("*.jpg"):
-            if current_time - snapshot.stat().st_mtime > max_age:
-                snapshot.unlink()
+        for clip in self.incidents_path.glob("*.mp4"):
+            if current_time - clip.stat().st_mtime > max_age:
+                clip.unlink()
                 deleted_count += 1
         
         return deleted_count
@@ -172,7 +209,7 @@ class AlertManager:
         return {
             "total_alerts": len(self.alert_history),
             "pending_uploads": len(self.get_pending_uploads()),
-            "snapshots_count": len(list(self.snapshots_path.glob("*.jpg"))),
+            "incident_clips_count": len(list(self.incidents_path.glob("*.mp4"))),
             "frames_processed": self.frame_count
         }
 

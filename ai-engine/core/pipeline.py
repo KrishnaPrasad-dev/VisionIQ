@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import os
-from datetime import datetime
+from datetime import datetime, time as datetime_time
 
 from detection.detector import detector
 from core.threat import calculate_threat_score, get_status
@@ -206,6 +206,29 @@ asset_damage_detector = AssetDamageDetector()
 LOITER_MIN_COUNT = int(os.getenv("QUANTUMEYE_LOITER_MIN_COUNT", "2"))
 
 
+def _parse_time(value):
+    if not value:
+        return None
+
+    try:
+        hour, minute = str(value).split(":", 1)
+        return datetime_time(hour=int(hour), minute=int(minute))
+    except Exception:
+        return None
+
+
+def _is_after_hours(now_time, open_start, open_end):
+    start = _parse_time(open_start)
+    end = _parse_time(open_end)
+    if start is None or end is None:
+        return False
+
+    if start <= end:
+        return not (start <= now_time < end)
+
+    return not (now_time >= start or now_time < end)
+
+
 def process_frame(frame, camera_config):
 
     # -------------------------------
@@ -262,6 +285,20 @@ def process_frame(frame, camera_config):
     # Require at least 2 independent loitering tracks to reduce false positives in normal shop scenes.
     loiter_alerts = len(loitering_ids) >= LOITER_MIN_COUNT
     now = datetime.now()
+    rules = dict(camera_config.get("rules", {}))
+    open_start = rules.get("openHoursStart")
+    open_end = rules.get("openHoursEnd")
+    after_hours = _is_after_hours(now.time(), open_start, open_end) if open_start and open_end else False
+
+    if rules.get("restrictedZoneMonitoring") and people_count > 0:
+        zone_hits.append({
+            "zone": rules.get("zoneLabel") or "Restricted Zone",
+            "threat": "critical",
+        })
+
+    scoring_rules = dict(rules)
+    scoring_rules["restrictedAccess"] = bool(rules.get("restrictedZoneMonitoring") or rules.get("restrictedAccess"))
+    scoring_rules["afterHours"] = after_hours
 
     metrics = {
         "people_count": people_count,
@@ -282,8 +319,7 @@ def process_frame(frame, camera_config):
     baseline_samples = baseline["baseline_samples"]
 
     # Learn from low-risk frames only to avoid training on attacks/anomalies.
-    rules = camera_config.get("rules", {})
-    max_people = int(rules.get("maxPeople", 5))
+    max_people = int(scoring_rules.get("maxPeopleAllowed", scoring_rules.get("maxPeople", 5)))
     low_risk_frame = (
         people_count <= max_people
         and len(zone_hits) == 0
@@ -291,8 +327,9 @@ def process_frame(frame, camera_config):
         and not loiter_alerts
         and not table_breakage
         and motion_info.get("motion_ratio", 0.0) < 0.08
+        and not after_hours
     )
-    if rules.get("adaptiveLearning", True):
+    if scoring_rules.get("adaptiveLearning", True):
         normal_behavior_model.update(
             camera_id=camera_id,
             metrics=metrics,
@@ -307,7 +344,7 @@ def process_frame(frame, camera_config):
         people_count=people_count,
         zone_hits=zone_hits,
         loitering=loiter_alerts,
-        rules=camera_config["rules"],
+        rules=scoring_rules,
         loitering_count=len(loitering_ids),
         running_count=len(running_ids),
         vandalism=table_breakage,
@@ -335,6 +372,7 @@ def process_frame(frame, camera_config):
         "table_breakage": table_breakage,
         "table_breakage_confidence": breakage_confidence,
         "motion_ratio": motion_info.get("motion_ratio", 0.0),
+        "after_hours": after_hours,
         "anomaly_score": anomaly_score,
         "baseline_ready": baseline_ready,
         "baseline_samples": baseline_samples,

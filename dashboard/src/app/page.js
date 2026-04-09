@@ -33,10 +33,12 @@ export default function Home() {
 
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4 md:pt-0">
-              <Link href="/login" className="w-full sm:w-auto">
-                <button className="w-full px-6 sm:px-8 py-3 bg-green-500 hover:bg-green-600 text-black font-bold rounded-lg transition">
-                  Get Started
-                </button>
+              <Link href="/login" className="inline-flex w-full sm:w-auto items-center justify-center px-6 sm:px-8 py-3 bg-green-500 hover:bg-green-600 text-black font-bold rounded-lg transition">
+                Get Started
+              </Link>
+
+              <Link href="/dashboard" className="inline-flex w-full sm:w-auto items-center justify-center px-6 sm:px-8 py-3 border border-white/15 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-lg transition">
+                View Dashboard
               </Link>
             </div>
 
@@ -97,13 +99,13 @@ export default function Home() {
               <CardTilt 
                 number="3"
                 title="Score"
-                description="Intelligent threat levels calculated in real-time"
+                description="Intelligent threat levels calculated from live detections and camera rules"
               />
 
               <CardTilt 
                 number="4"
                 title="Alert"
-                description="Instant notifications and incident management from dashboard"
+                description="Instant notifications for restricted zones, after-hours activity, and occupancy limits"
               />
 
             </div>

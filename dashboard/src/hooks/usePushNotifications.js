@@ -38,7 +38,7 @@ export default function usePushNotifications() {
       });
 
       // Send subscription to backend
-      const token = localStorage.getItem("authToken");
+      const token = localStorage.getItem("visioniq_token") || localStorage.getItem("authToken") || localStorage.getItem("quantumeye_token");
       const response = await fetch("/api/push/subscribe", {
         method: "POST",
         headers: {

@@ -286,11 +286,18 @@ class QuantumEyeDesktopApp:
             run_detection_loop(
                 source=source,
                 camera_id=camera_id,
+                camera_rules=self._selected_camera_rules(),
                 stop_event=self.stop_event,
                 on_status=self._status_callback,
             )
         except Exception as exc:
             self.log_queue.put(("error", {"message": str(exc)}))
+
+    def _selected_camera_rules(self):
+        selected = self.camera_selector.current()
+        if selected < 0 or selected >= len(self.cameras):
+            return {}
+        return self.cameras[selected].get("rules", {}) or {}
 
     def start_detection(self):
         if self.worker_thread and self.worker_thread.is_alive():

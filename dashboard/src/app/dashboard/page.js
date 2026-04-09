@@ -8,7 +8,7 @@ import usePushNotifications from "../../hooks/usePushNotifications"
 
 export default function DashboardPage(){
 
-  const ALERT_COOLDOWN_MS = 15000
+  const ALERT_COOLDOWN_MS = 5 * 60 * 1000
 
   const data = useVisionIQ()
   usePushNotifications()
@@ -50,6 +50,7 @@ export default function DashboardPage(){
         ? "SUSPICIOUS"
         : "SAFE",
       personCount: data?.person_count ?? 0,
+      cameraId: data?.camera_id ?? null,
       zoneTriggered: Boolean(data?.zone_triggered),
       afterHours: Boolean(data?.after_hours),
       message:
@@ -67,11 +68,8 @@ export default function DashboardPage(){
     const fingerprint = `${item.status}-${item.personCount}-${item.zoneTriggered}-${item.afterHours}`
     const gate = lastAlertRef.current
     const cooldownPassed = item.ts - gate.at >= ALERT_COOLDOWN_MS
-    const escalatedToCritical = gate.status !== "CRITICAL" && item.status === "CRITICAL"
-    const majorScoreShift = Math.abs(item.score - gate.score) >= 20
-    const changedPattern = gate.fingerprint !== fingerprint
 
-    if (!cooldownPassed && !escalatedToCritical && !majorScoreShift && !changedPattern) {
+    if (!cooldownPassed) {
       return
     }
 
@@ -95,6 +93,23 @@ export default function DashboardPage(){
 
   const lastSeenAgeMs = nowMs - (data?.ts ? Number(data.ts) * 1000 : 0)
   const streamOnline = Boolean(data?.ts) && lastSeenAgeMs < 6000
+
+  async function acknowledgeAlert(id, cameraId) {
+    setAcknowledged(prev => prev.includes(id) ? prev : [id, ...prev])
+    lastAlertRef.current.at = 0
+
+    if (!cameraId) return
+
+    try {
+      await fetch("/api/alerts/ack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ camera_id: cameraId }),
+      })
+    } catch {
+      // Keep local acknowledge state even if remote reset fails.
+    }
+  }
 
   return(
 
@@ -151,7 +166,7 @@ export default function DashboardPage(){
       <AlertRail
         alerts={activeAlerts}
         acknowledged={acknowledged}
-        onAcknowledge={(id) => setAcknowledged(prev => prev.includes(id) ? prev : [id, ...prev])}
+        onAcknowledge={(id, cameraId) => acknowledgeAlert(id, cameraId)}
         onDismiss={(id) => setDismissed(prev => prev.includes(id) ? prev : [id, ...prev])}
       />
 
@@ -246,7 +261,7 @@ function Metrics({metrics}){
 
       <Metric title="People" value={metrics?.person_count ?? 0}/>
       <Metric title="Loitering" value={metrics?.loitering_count ?? 0}/>
-      <Metric title="Zone Breach" value={metrics?.zone_triggered ? "YES":"NO"}/>
+      <Metric title="Restricted Zone" value={metrics?.zone_triggered ? "BREACH":"CLEAR"}/>
       <Metric title="After Hours" value={metrics?.after_hours ? "YES":"NO"}/>
 
     </div>
@@ -331,7 +346,7 @@ function AlertRail({ alerts, acknowledged, onAcknowledge, onDismiss }) {
 
             <div className="flex gap-2">
               <button
-                onClick={() => onAcknowledge(alert.id)}
+                onClick={() => onAcknowledge(alert.id, alert.cameraId)}
                 disabled={acked}
                 className="px-2 py-1 text-xs rounded border border-white/20 text-white disabled:opacity-50"
               >
@@ -382,7 +397,7 @@ function IncidentTimeline({ events }) {
                   </div>
                   <div className="text-sm text-white mb-1">Score {item.score}</div>
                   <div className="text-xs text-gray-300">
-                    {item.zoneTriggered ? "Zone breach" : "Pattern alert"}
+                    {item.zoneTriggered ? "Restricted zone breach" : "Pattern alert"}
                     {item.afterHours ? " | After-hours" : ""}
                   </div>
                 </div>

@@ -4,13 +4,7 @@ import Navbar from "../../components/Navbar"
 import GridBackground from "../../components/GridBackground"
 import useVisionIQ from "../../hooks/useVisionIQ"
 
-const AI_ENGINE = "http://localhost:8000"
-
-const DEMO_ALERTS = [
-  { timestamp: "2026-03-14T12:45:21", status: "CRITICAL",   score: 82, person_count: 4, snapshot_path: null },
-  { timestamp: "2026-03-14T12:41:09", status: "SUSPICIOUS", score: 55, person_count: 2, snapshot_path: null },
-  { timestamp: "2026-03-14T11:42:19", status: "CRITICAL",   score: 88, person_count: 5, snapshot_path: null },
-]
+const AI_ENGINE = process.env.NEXT_PUBLIC_AI_ENGINE_URL || "http://localhost:8010"
 
 const STATUS = {
   CRITICAL:   { color: "#f87171", bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.25)" },
@@ -19,11 +13,9 @@ const STATUS = {
 
 const FILTERS = ["ALL", "CRITICAL", "SUSPICIOUS"]
 
-function snapshotUrl(path) {
+function mediaUrl(path) {
   if (!path) return null
   if (path.startsWith("http")) return path
-  // path from AI engine is like "snapshots/alert_20260314_124521.jpg"
-  // served at http://localhost:8000/snapshots/alert_20260314_124521.jpg
   const clean = path.replace(/^\//, "")
   return `${AI_ENGINE}/${clean}`
 }
@@ -38,21 +30,24 @@ function fmt(ts) {
   } catch { return { time: ts, date: "" } }
 }
 
-function SnapshotThumb({ path, status }) {
+function PlaybackThumb({ path }) {
   const [err, setErr] = useState(false)
-  const url = snapshotUrl(path)
+  const url = mediaUrl(path)
   if (!url || err) {
     return (
       <div style={{ width:"100%", height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8 }}>
         <span style={{ fontSize:28, opacity:0.1 }}>◉</span>
-        <span style={{ fontSize:10, color:"rgba(255,255,255,0.12)", letterSpacing:"0.15em" }}>NO SNAPSHOT</span>
+        <span style={{ fontSize:10, color:"rgba(255,255,255,0.12)", letterSpacing:"0.15em" }}>NO PLAYBACK</span>
       </div>
     )
   }
   return (
-    <img
+    <video
       src={url}
-      alt="alert snapshot"
+      muted
+      autoPlay
+      loop
+      playsInline
       onError={() => setErr(true)}
       style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
     />
@@ -66,7 +61,7 @@ export default function AlertsPage() {
   const [modal,  setModal]  = useState(null)
 
   // Only keep CRITICAL and SUSPICIOUS — filter out SAFE at source
-  const rawAlerts = (data?.alerts?.length ? data.alerts : DEMO_ALERTS)
+  const rawAlerts = (data?.alerts || [])
     .filter(a => a.status === "CRITICAL" || a.status === "SUSPICIOUS")
 
   const alerts = filter === "ALL" ? rawAlerts : rawAlerts.filter(a => a.status === filter)
@@ -169,7 +164,8 @@ export default function AlertsPage() {
             {alerts.map((alert,i)=>{
               const cfg = STATUS[alert.status]||STATUS.SUSPICIOUS
               const {time,date} = fmt(alert.timestamp)
-              const hasSnap = !!snapshotUrl(alert.snapshot_path)
+              const playbackPath = alert.playback_path || alert.snapshot_path
+              const hasPlayback = !!mediaUrl(playbackPath)
               return(
                 <div key={i} className="alert-card" style={{
                   background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)",
@@ -177,19 +173,19 @@ export default function AlertsPage() {
                 }}>
                   <div
                     className="snap-wrap"
-                    onClick={()=>hasSnap && setModal(alert)}
-                    style={{ aspectRatio:"16/9", background:"rgba(0,0,0,0.6)", position:"relative", cursor:hasSnap?"pointer":"default" }}
+                    onClick={()=>hasPlayback && setModal(alert)}
+                    style={{ aspectRatio:"16/9", background:"rgba(0,0,0,0.6)", position:"relative", cursor:hasPlayback?"pointer":"default" }}
                   >
-                    <SnapshotThumb path={alert.snapshot_path} status={alert.status} />
+                    <PlaybackThumb path={playbackPath} />
 
-                    {hasSnap && (
+                    {hasPlayback && (
                       <div className="snap-overlay" style={{
                         position:"absolute", inset:0, background:"rgba(0,0,0,0.5)",
                         display:"flex", alignItems:"center", justifyContent:"center",
                         opacity:0, transition:"opacity 0.2s",
                       }}>
                         <span style={{ fontSize:12, fontWeight:600, color:"#fff", padding:"8px 18px", borderRadius:99, background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.3)" }}>
-                          🔍 View Full
+                          Play Incident
                         </span>
                       </div>
                     )}
@@ -242,7 +238,7 @@ export default function AlertsPage() {
             {alerts.map((alert,i)=>{
               const cfg = STATUS[alert.status]||STATUS.SUSPICIOUS
               const {time,date} = fmt(alert.timestamp)
-              const url = snapshotUrl(alert.snapshot_path)
+              const url = mediaUrl(alert.playback_path || alert.snapshot_path)
               return(
                 <div key={i} className="alert-card" style={{
                   display:"grid", gridTemplateColumns:"56px 2fr 1fr 1fr 1fr 80px",
@@ -255,10 +251,7 @@ export default function AlertsPage() {
                     background:"rgba(0,0,0,0.5)", border:"1px solid rgba(255,255,255,0.08)",
                     cursor:url?"pointer":"default", flexShrink:0,
                   }}>
-                    {url
-                      ? <img src={url} alt="" onError={e=>e.target.style.display="none"} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                      : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, opacity:0.2 }}>◉</div>
-                    }
+                    <PlaybackThumb path={alert.playback_path || alert.snapshot_path} />
                   </div>
                   <div>
                     <span style={{ fontSize:14, fontWeight:500 }}>{time}</span>
@@ -282,7 +275,7 @@ export default function AlertsPage() {
                     color:url?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.15)",
                     fontSize:11, fontWeight:500, fontFamily:"inherit",
                     cursor:url?"pointer":"not-allowed",
-                  }}>{url?"View":"—"}</button>
+                  }}>{url?"Play":"—"}</button>
                 </div>
               )
             })}
@@ -306,7 +299,14 @@ export default function AlertsPage() {
               padding:"6px 16px", cursor:"pointer", fontFamily:"inherit",
             }}>✕ Close</button>
             <div style={{ borderRadius:14, overflow:"hidden", border:`1px solid ${(STATUS[modal.status]||STATUS.SUSPICIOUS).border}` }}>
-              <img src={snapshotUrl(modal.snapshot_path)} alt="snapshot" style={{ width:"100%", display:"block" }} />
+              <video
+                src={mediaUrl(modal.playback_path || modal.snapshot_path)}
+                controls
+                autoPlay
+                muted
+                playsInline
+                style={{ width:"100%", display:"block", background:"#000" }}
+              />
             </div>
             <div style={{
               marginTop:14, display:"flex", gap:16, flexWrap:"wrap",

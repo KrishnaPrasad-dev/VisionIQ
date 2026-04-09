@@ -4,7 +4,7 @@ import Camera from "../../../models/Camera"
 
 const ENGINE_BASE = process.env.VISIONIQ_ENGINE_URL || process.env.QUANTUMEYE_ENGINE_URL || "http://localhost:8010"
 
-async function notifyEngineStart(cameraId, source) {
+async function notifyEngineStart(cameraId, source, rules) {
   await fetch(`${ENGINE_BASE}/start-camera`, {
     method: "POST",
     headers: {
@@ -12,7 +12,21 @@ async function notifyEngineStart(cameraId, source) {
     },
     body: JSON.stringify({
       id: cameraId,
-      source
+      source,
+      rules,
+    })
+  })
+}
+
+async function notifyEngineRules(cameraId, rules) {
+  await fetch(`${ENGINE_BASE}/update-camera-rules`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      id: cameraId,
+      rules,
     })
   })
 }
@@ -87,12 +101,13 @@ export async function POST(req) {
       name: body.name,
       source: body.source,
       type: body.type,
-      location: body.location
+      location: body.location,
+      ...(body.rules !== undefined ? { rules: body.rules } : {})
     })
 
     // Notify AI stream service to start this camera source
     try {
-      await notifyEngineStart(camera._id, camera.source)
+      await notifyEngineStart(camera._id, camera.source, camera.rules)
     } catch (engineErr) {
       console.warn("AI engine notify failed:", engineErr?.message || engineErr)
     }
@@ -123,7 +138,8 @@ export async function PATCH(req) {
         $set: {
           ...(body.name !== undefined ? { name: body.name } : {}),
           ...(body.location !== undefined ? { location: body.location } : {}),
-          ...(body.status !== undefined ? { status: body.status } : {})
+          ...(body.status !== undefined ? { status: body.status } : {}),
+          ...(body.rules !== undefined ? { rules: body.rules } : {})
         }
       },
       { new: true }
@@ -131,6 +147,14 @@ export async function PATCH(req) {
 
     if (!camera) {
       return Response.json({ success: false, error: "Camera not found" }, { status: 404 })
+    }
+
+    if (body.rules !== undefined) {
+      try {
+        await notifyEngineRules(camera._id, camera.rules)
+      } catch (engineErr) {
+        console.warn("AI engine rule sync failed:", engineErr?.message || engineErr)
+      }
     }
 
     return Response.json({ success: true, camera })

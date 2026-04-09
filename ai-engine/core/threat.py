@@ -69,7 +69,7 @@ def calculate_threat_score(
 
     # ========================================
     # CROWD DENSITY THREAT
-    max_people = rules.get("maxPeople", 5)
+    max_people = rules.get("maxPeopleAllowed", rules.get("maxPeople", 5))
 
     if people_count > max_people:
         overflow = people_count - max_people
@@ -82,8 +82,14 @@ def calculate_threat_score(
 
     # ========================================
     # RESTRICTED AREA VIOLATION
-    if rules.get("restrictedAccess") and people_count > 0:
+    restricted_zone = bool(rules.get("restrictedZoneMonitoring") or rules.get("restrictedAccess"))
+    after_hours = bool(rules.get("afterHours"))
+
+    if restricted_zone and people_count > 0:
         score += 60
+
+    if after_hours and people_count > 0:
+        score += 22
 
     # ========================================
     # ZONE-BASED THREATS
@@ -126,7 +132,8 @@ def calculate_threat_score(
             + int(running_count > 0)
             + int(people_count > max_people)
             + int(len(zone_hits) > 0)
-            + int(rules.get("restrictedAccess", False) and people_count > 0)
+            + int(restricted_zone and people_count > 0)
+            + int(after_hours and people_count > 0)
         )
         if strong_signals == 0:
             score *= 0.75
@@ -135,7 +142,8 @@ def calculate_threat_score(
     # THREAT LEVEL ESCALATION
     threat_indicators = sum([
         people_count > max_people,
-        rules.get("restrictedAccess", False),
+        restricted_zone,
+        after_hours,
         len(zone_hits) > 0,
         loitering,
         running_count > 0,

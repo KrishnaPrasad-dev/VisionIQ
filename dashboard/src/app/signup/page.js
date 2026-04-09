@@ -2,7 +2,6 @@
 import PixelBlast from "../../components/PixelBlast";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Navbar from "../../components/Navbar";
 
 export default function SignupPage() {
   const router = useRouter();

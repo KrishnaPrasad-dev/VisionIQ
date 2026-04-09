@@ -1,5 +1,6 @@
-import base64
 import asyncio
+import base64
+from collections import deque
 import os
 import socket
 import threading
@@ -8,9 +9,13 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 import cv2
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from alerts.alert_manager import alert_manager
+from alerts.push_notifier import PushNotifier
 from core.normal_behavior import normal_behavior_model
 from core.pipeline import draw_overlay, process_frame
 from core.rules_engine import RulesEngine
@@ -19,14 +24,31 @@ from utils.logger import setup_logger
 
 logger = setup_logger("QuantumEye-Stream")
 
+dashboard_api_url = os.getenv("DASHBOARD_API_URL", "http://localhost:3000")
+push_notifier = PushNotifier(api_base_url=dashboard_api_url)
+
+ALERT_COOLDOWN_SEC = int(os.getenv("QUANTUMEYE_ALERT_COOLDOWN_SEC", "300"))
+ALERT_MIN_SCORE = int(os.getenv("QUANTUMEYE_ALERT_MIN_SCORE", "60"))
+INCIDENT_BUFFER_SEC = int(os.getenv("QUANTUMEYE_INCIDENT_BUFFER_SEC", "8"))
+
 
 class StartCameraRequest(BaseModel):
     id: Optional[str] = None
     source: str
+    rules: Dict[str, Any] = {}
 
 
 class TestSourceRequest(BaseModel):
     source: str
+
+
+class UpdateCameraRulesRequest(BaseModel):
+    id: str
+    rules: Dict[str, Any] = {}
+
+
+class AckAlertRequest(BaseModel):
+    camera_id: str
 
 
 class StreamEngine:
@@ -34,6 +56,11 @@ class StreamEngine:
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._state_lock = threading.Lock()
+        self._camera_lock = threading.Lock()
+        self._camera_state: Dict[str, Any] = {
+            "camera_id": None,
+            "rules": {},
+        }
         self._latest_payload: Dict[str, Any] = {
             "status": "idle",
             "message": "Waiting for camera start",
@@ -45,14 +72,106 @@ class StreamEngine:
             "after_hours": False,
             "camera_id": None,
             "source": None,
+            "alerts": [],
             "ts": time.time(),
         }
         self._sequence = 0
+        self._alert_gate: Dict[str, Dict[str, float]] = {}
 
     @staticmethod
     def _coerce_source(source: Any):
         value = str(source).strip()
         return int(value) if value.isdigit() else value
+
+    @staticmethod
+    def _normalize_rules(rules: Optional[Dict[str, Any]] = None):
+        rules = dict(rules or {})
+        max_people = rules.get("maxPeopleAllowed", rules.get("maxPeople"))
+
+        try:
+            if max_people in (None, ""):
+                max_people = int(os.getenv("QUANTUMEYE_MAX_PEOPLE", "8"))
+            else:
+                max_people = int(max_people)
+        except (TypeError, ValueError):
+            max_people = int(os.getenv("QUANTUMEYE_MAX_PEOPLE", "8"))
+
+        restricted_zone = bool(rules.get("restrictedZoneMonitoring") or rules.get("restrictedAccess"))
+
+        return {
+            "maxPeople": max_people,
+            "maxPeopleAllowed": max_people,
+            "restrictedAccess": restricted_zone,
+            "restrictedZoneMonitoring": restricted_zone,
+            "adaptiveLearning": bool(rules.get("adaptiveLearning", True)),
+            "mode": rules.get("mode", "SHOP"),
+            "openHoursStart": str(rules.get("openHoursStart") or ""),
+            "openHoursEnd": str(rules.get("openHoursEnd") or ""),
+            "zoneLabel": str(rules.get("zoneLabel") or ""),
+            "notes": str(rules.get("notes") or ""),
+        }
+
+    def _set_camera_state(self, camera_id: str, rules: Optional[Dict[str, Any]] = None):
+        with self._camera_lock:
+            self._camera_state = {
+                "camera_id": str(camera_id),
+                "rules": self._normalize_rules(rules),
+            }
+
+    def _update_camera_rules(self, camera_id: str, rules: Optional[Dict[str, Any]] = None):
+        with self._camera_lock:
+            active_id = self._camera_state.get("camera_id")
+            if active_id is None or str(active_id) != str(camera_id):
+                return False
+
+            current_rules = dict(self._camera_state.get("rules") or {})
+            current_rules.update(self._normalize_rules(rules))
+            self._camera_state["rules"] = current_rules
+            return True
+
+    def _get_camera_state(self):
+        with self._camera_lock:
+            return {
+                "camera_id": self._camera_state.get("camera_id"),
+                "rules": dict(self._camera_state.get("rules") or {}),
+            }
+
+    def _gate(self, camera_id: str):
+        gate = self._alert_gate.get(camera_id)
+        if gate is None:
+            gate = {
+                "last_alert_ts": 0.0,
+                "last_ack_ts": 0.0,
+                "last_alert_score": 0.0,
+            }
+            self._alert_gate[camera_id] = gate
+        return gate
+
+    def acknowledge_alert(self, camera_id: str):
+        gate = self._gate(str(camera_id))
+        gate["last_ack_ts"] = time.time()
+
+    @staticmethod
+    def _serialize_alerts(camera_id: str, limit: int = 80):
+        history = alert_manager.get_alert_history(limit=limit)
+        items = []
+        for alert in history:
+            record_camera_id = str(alert.get("camera_id") or "")
+            if record_camera_id and record_camera_id != str(camera_id):
+                continue
+
+            items.append(
+                {
+                    "id": alert.get("id"),
+                    "timestamp": alert.get("timestamp"),
+                    "status": alert.get("threat_status", "INFO"),
+                    "score": int(alert.get("threat_score", 0)),
+                    "person_count": int(alert.get("people_count", 0)),
+                    "playback_path": alert.get("playback_path"),
+                    "snapshot_path": alert.get("snapshot_path"),
+                }
+            )
+        return items
 
     def get_payload(self):
         with self._state_lock:
@@ -104,8 +223,9 @@ class StreamEngine:
         except Exception:
             return False
 
-    def start(self, source: str, camera_id: str):
+    def start(self, source: str, camera_id: str, rules: Optional[Dict[str, Any]] = None):
         self.stop()
+        self._set_camera_state(camera_id, rules)
         self._stop_event = threading.Event()
         self._thread = threading.Thread(
             target=self._run,
@@ -115,7 +235,7 @@ class StreamEngine:
         self._thread.start()
 
     def test_source(self, source: str):
-        """Validate a source without changing current running stream."""
+        """Validate a source without changing the current running stream."""
         if str(source).strip().lower().startswith("rtsp://"):
             os.environ.setdefault(
                 "OPENCV_FFMPEG_CAPTURE_OPTIONS",
@@ -178,7 +298,6 @@ class StreamEngine:
         )
 
         if str(source).strip().lower().startswith("rtsp://"):
-            # Keep RTSP dial timeout short so unreachable links fail fast.
             os.environ.setdefault(
                 "OPENCV_FFMPEG_CAPTURE_OPTIONS",
                 "rtsp_transport;tcp|stimeout;5000000",
@@ -268,18 +387,6 @@ class StreamEngine:
             fps = 15
         frame_interval = max(1.0 / float(fps), 0.03)
 
-        camera_config = {
-            "camera_id": camera_id,
-            "zones": [],
-            "rules": {
-                "maxPeople": int(os.getenv("QUANTUMEYE_MAX_PEOPLE", "8")),
-                "restrictedAccess": False,
-                "adaptiveLearning": True,
-                "mode": "SHOP",
-            },
-        }
-        rules_engine = RulesEngine(camera_config["rules"])
-
         logger.info(f"Stream engine started | camera_id={camera_id} | source={source}")
         self._update_payload(
             {
@@ -292,6 +399,8 @@ class StreamEngine:
         )
 
         frame_count = 0
+        fps_value = max(float(fps or 15), 1.0)
+        frame_buffer = deque(maxlen=max(10, int(fps_value * INCIDENT_BUFFER_SEC)))
 
         try:
             while not stop_event.is_set():
@@ -312,9 +421,50 @@ class StreamEngine:
                     break
 
                 frame_count += 1
+                camera_state = self._get_camera_state()
+                camera_config = {
+                    "camera_id": camera_id,
+                    "zones": [],
+                    "rules": camera_state.get("rules", {}),
+                }
+                rules_engine = RulesEngine(camera_config["rules"])
+
                 result = process_frame(frame, camera_config)
                 events = rules_engine.evaluate(result)
                 display = draw_overlay(frame.copy(), result, events)
+                frame_buffer.append(display.copy())
+
+                now = time.time()
+                gate = self._gate(str(camera_id))
+                alert_score = int(result.get("score", 0))
+                has_breach_signal = bool(result.get("zone_hits")) or bool(result.get("after_hours"))
+                should_consider_alert = alert_score >= ALERT_MIN_SCORE and (has_breach_signal or result.get("status") == "CRITICAL")
+                can_alert_by_cooldown = (now - gate["last_alert_ts"]) >= ALERT_COOLDOWN_SEC
+                acknowledged_since_last = gate["last_ack_ts"] > gate["last_alert_ts"]
+
+                if should_consider_alert and (can_alert_by_cooldown or acknowledged_since_last):
+                    alert_id = alert_manager.create_alert(
+                        frame=display,
+                        result=result,
+                        alert_type="THREAT_DETECTED",
+                        clip_frames=list(frame_buffer),
+                        fps=fps_value,
+                        camera_id=str(camera_id),
+                    )
+                    gate["last_alert_ts"] = now
+                    gate["last_alert_score"] = alert_score
+                    logger.warning("ALERT: %s | Score: %s | Status: %s", alert_id, alert_score, result.get("status"))
+
+                    try:
+                        push_notifier.notify_alert(
+                            alert_type="THREAT_DETECTED",
+                            threat_score=alert_score,
+                            camera_id=str(camera_id),
+                            message=f"Threat detected: {result.get('status', 'UNKNOWN')} (Score: {alert_score})",
+                            deep_link="/alerts",
+                        )
+                    except Exception as push_err:
+                        logger.error("Failed to send push notification: %s", push_err)
 
                 ok, encoded = cv2.imencode(
                     ".jpg", display, [int(cv2.IMWRITE_JPEG_QUALITY), 70]
@@ -323,7 +473,6 @@ class StreamEngine:
                     continue
 
                 annotated_base64 = base64.b64encode(encoded.tobytes()).decode("ascii")
-                zone_triggered = len(result.get("zone_hits", [])) > 0
 
                 self._update_payload(
                     {
@@ -333,12 +482,13 @@ class StreamEngine:
                         "threat_score": int(result.get("score", 0)),
                         "person_count": int(result.get("people_count", 0)),
                         "loitering_count": len(result.get("loitering_ids", [])),
-                        "zone_triggered": zone_triggered,
-                        "after_hours": False,
+                        "zone_triggered": len(result.get("zone_hits", [])) > 0,
+                        "after_hours": bool(result.get("after_hours", False)),
                         "camera_id": camera_id,
                         "source": str(source),
                         "effective_source": effective_source,
                         "events": events,
+                        "alerts": self._serialize_alerts(str(camera_id), limit=80),
                         "frame": frame_count,
                     }
                 )
@@ -362,6 +512,19 @@ class StreamEngine:
 
 
 app = FastAPI(title="QuantumEye Stream Service")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount(
+    "/alerts",
+    StaticFiles(directory=os.path.join(os.path.dirname(__file__), "alerts")),
+    name="alerts",
+)
+
 engine = StreamEngine()
 
 
@@ -374,13 +537,29 @@ def health():
 @app.post("/start-camera")
 def start_camera(req: StartCameraRequest):
     camera_id = req.id or "cam_1"
-    engine.start(source=req.source, camera_id=str(camera_id))
+    engine.start(source=req.source, camera_id=str(camera_id), rules=req.rules)
     return {
         "success": True,
         "message": "Camera stream started",
         "camera_id": str(camera_id),
         "source": req.source,
     }
+
+
+@app.post("/update-camera-rules")
+def update_camera_rules(req: UpdateCameraRulesRequest):
+    updated = engine._update_camera_rules(req.id, req.rules)
+    return {
+        "success": True,
+        "updated": updated,
+        "camera_id": req.id,
+    }
+
+
+@app.post("/ack-alert")
+def ack_alert(req: AckAlertRequest):
+    engine.acknowledge_alert(req.camera_id)
+    return {"success": True, "camera_id": req.camera_id}
 
 
 @app.post("/test-source")

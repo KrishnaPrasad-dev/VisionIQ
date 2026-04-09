@@ -6,6 +6,56 @@ import GridBackground from "../../../src/components/GridBackground"
 
 const TYPES = ["rtsp", "ipcam", "webcam", "upload"]
 
+const DEFAULT_RULE_FORM = {
+  restrictedZoneMonitoring: false,
+  zoneLabel: "",
+  maxPeopleAllowed: "",
+  openHoursStart: "",
+  openHoursEnd: "",
+  notes: "",
+}
+
+function buildRuleForm(camera) {
+  const rules = camera?.rules || {}
+
+  return {
+    restrictedZoneMonitoring: Boolean(rules.restrictedZoneMonitoring),
+    zoneLabel: rules.zoneLabel || "",
+    maxPeopleAllowed:
+      rules.maxPeopleAllowed === null || rules.maxPeopleAllowed === undefined
+        ? ""
+        : String(rules.maxPeopleAllowed),
+    openHoursStart: rules.openHoursStart || "",
+    openHoursEnd: rules.openHoursEnd || "",
+    notes: rules.notes || "",
+  }
+}
+
+function buildRulePayload(form) {
+  const parsedMaxPeople = form.maxPeopleAllowed === "" ? null : Number(form.maxPeopleAllowed)
+
+  return {
+    restrictedZoneMonitoring: Boolean(form.restrictedZoneMonitoring),
+    zoneLabel: form.zoneLabel.trim(),
+    maxPeopleAllowed: Number.isFinite(parsedMaxPeople) ? parsedMaxPeople : null,
+    openHoursStart: form.openHoursStart,
+    openHoursEnd: form.openHoursEnd,
+    notes: form.notes.trim(),
+  }
+}
+
+function hasCustomRules(camera) {
+  const rules = camera?.rules || {}
+  return Boolean(
+    rules.restrictedZoneMonitoring ||
+      rules.zoneLabel ||
+      (rules.maxPeopleAllowed !== null && rules.maxPeopleAllowed !== undefined) ||
+      rules.openHoursStart ||
+      rules.openHoursEnd ||
+      rules.notes
+  )
+}
+
 export default function CamerasPage() {
   const [type, setType] = useState("rtsp")
   const [form, setForm] = useState({
@@ -21,6 +71,9 @@ export default function CamerasPage() {
   const [typeFilter, setTypeFilter] = useState("all")
   const [phoneIp, setPhoneIp] = useState("")
   const [selectedFile, setSelectedFile] = useState(null)
+  const [editingCamera, setEditingCamera] = useState(null)
+  const [ruleForm, setRuleForm] = useState(DEFAULT_RULE_FORM)
+  const [savingRules, setSavingRules] = useState(false)
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -75,7 +128,7 @@ export default function CamerasPage() {
   }
 
   const token = typeof window !== "undefined"
-    ? localStorage.getItem("visioniq_token") || localStorage.getItem("quantumeye_token")
+    ? localStorage.getItem("visioniq_token") || localStorage.getItem("authToken") || localStorage.getItem("quantumeye_token")
     : null
 
   const fetchCameras = useCallback(async () => {
@@ -156,18 +209,20 @@ export default function CamerasPage() {
   }
 
   async function handleTestSource() {
-    const resolvedSource = await resolveSourceForActions()
-
-    if (!resolvedSource) {
-      alert("Add a source URL first")
-      return
-    }
-    if (!token) {
-      alert("Please login first")
-      return
-    }
+    let resolvedSource = ""
 
     try {
+      resolvedSource = await resolveSourceForActions()
+
+      if (!resolvedSource) {
+        alert("Add a source URL first")
+        return
+      }
+      if (!token) {
+        alert("Please login first")
+        return
+      }
+
       setLoadingTest(true)
       const res = await fetch("/api/cameras", {
         method: "POST",
@@ -184,6 +239,8 @@ export default function CamerasPage() {
       } else {
         alert("Connection test failed: " + data.error)
       }
+    } catch (err) {
+      alert(err?.message || "Something went wrong")
     } finally {
       setLoadingTest(false)
     }
@@ -207,6 +264,62 @@ export default function CamerasPage() {
       setCameras(prev => prev.map(c => c._id === camera._id ? { ...c, status: nextStatus } : c))
     } else {
       alert(data.error || "Failed to update camera")
+    }
+  }
+
+  function openRuleEditor(camera) {
+    setEditingCamera(camera)
+    setRuleForm(buildRuleForm(camera))
+  }
+
+  function closeRuleEditor() {
+    setEditingCamera(null)
+    setRuleForm({ ...DEFAULT_RULE_FORM })
+  }
+
+  function handleRuleChange(e) {
+    const { name, type, checked, value } = e.target
+    setRuleForm(prev => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }))
+  }
+
+  async function saveRules() {
+    if (!token || !editingCamera) return
+
+    try {
+      setSavingRules(true)
+
+      const rules = buildRulePayload(ruleForm)
+      const res = await fetch("/api/cameras", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          id: editingCamera._id,
+          rules,
+        })
+      })
+
+      const data = await res.json()
+
+      if (data.success) {
+        setCameras(prev => prev.map(camera => camera._id === editingCamera._id ? {
+          ...camera,
+          rules: data.camera?.rules || rules,
+        } : camera))
+        closeRuleEditor()
+      } else {
+        alert(data.error || "Failed to update camera rules")
+      }
+    } catch (err) {
+      console.error(err)
+      alert("Could not save camera rules")
+    } finally {
+      setSavingRules(false)
     }
   }
 
@@ -244,6 +357,19 @@ export default function CamerasPage() {
     })
   }, [cameras, typeFilter, search])
 
+  const stats = useMemo(() => {
+    const activeCount = cameras.filter(camera => camera.status !== "inactive").length
+    const restrictedCount = cameras.filter(camera => camera.rules?.restrictedZoneMonitoring).length
+    const customRuleCount = cameras.filter(hasCustomRules).length
+
+    return {
+      total: cameras.length,
+      active: activeCount,
+      restricted: restrictedCount,
+      rules: customRuleCount,
+    }
+  }, [cameras])
+
   function applyIpCamPreset(kind) {
     const ip = phoneIp.trim()
     if (!ip) {
@@ -271,13 +397,13 @@ export default function CamerasPage() {
         <div className="mb-8 rounded-2xl border border-white/10 bg-black/30 backdrop-blur px-5 py-5 sm:px-6 sm:py-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] tracking-[0.18em] text-green-300/80 mb-2">SOURCE CONTROL</p>
-              <h1 className="text-3xl sm:text-4xl text-white font-semibold mb-2">Camera Manager</h1>
-              <p className="text-gray-400 text-sm sm:text-base">Manage sources, validate streams, and control active cameras.</p>
+              <p className="text-[11px] tracking-[0.18em] text-green-300/80 mb-2">CENTRALIZED CONTROL</p>
+              <h1 className="text-3xl sm:text-4xl text-white font-semibold mb-2">Camera Dashboard</h1>
+              <p className="text-gray-400 text-sm sm:text-base">View every camera, manage stream status, and assign custom security rules from one place.</p>
             </div>
             <div className="hidden sm:flex items-center gap-2">
               <span className="px-2.5 py-1 text-xs rounded-full border border-green-500/40 bg-green-500/10 text-green-300">
-                {cameras.length} Total
+                {stats.total} Total
               </span>
               <span className="px-2.5 py-1 text-xs rounded-full border border-white/20 text-gray-300">
                 {filtered.length} Visible
@@ -286,9 +412,34 @@ export default function CamerasPage() {
           </div>
         </div>
 
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-gray-400 mb-2">Total cameras</p>
+            <div className="text-3xl font-semibold text-white">{stats.total}</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-gray-400 mb-2">Active cameras</p>
+            <div className="text-3xl font-semibold text-green-300">{stats.active}</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-gray-400 mb-2">Restricted zones</p>
+            <div className="text-3xl font-semibold text-amber-300">{stats.restricted}</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-gray-400 mb-2">Custom rule sets</p>
+            <div className="text-3xl font-semibold text-white">{stats.rules}</div>
+          </div>
+        </div>
+
         <div className="grid lg:grid-cols-[1fr_380px] gap-6">
 
           <section className="rounded-2xl border border-white/10 bg-black/35 backdrop-blur p-4 md:p-5 shadow-[0_10px_40px_rgba(0,0,0,0.35)]">
+
+            <div className="mb-4">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500 mb-1">Connected cameras</p>
+              <h2 className="text-xl font-semibold text-white">All cameras in one dashboard</h2>
+              <p className="text-sm text-gray-400 mt-1">Open settings on any camera to define restricted zones, people limits, and active hours.</p>
+            </div>
 
             <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between mb-4">
               <div className="flex flex-col sm:flex-row gap-3">
@@ -325,6 +476,7 @@ export default function CamerasPage() {
               <div className="space-y-3">
                 {filtered.map(camera => {
                   const isActive = camera.status !== "inactive"
+                  const rules = camera.rules || {}
                   return (
                     <div key={camera._id} className="rounded-xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-4 hover:border-green-400/35 transition">
                       <div className="flex flex-wrap gap-3 items-center justify-between">
@@ -335,6 +487,17 @@ export default function CamerasPage() {
                           </div>
                           <div className="text-xs text-gray-400 mt-1">{camera.location || "No location"}</div>
                           <div className="text-xs text-gray-500 mt-1 break-all">{camera.source}</div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <span className={`text-[10px] px-2 py-1 rounded-full border ${rules.restrictedZoneMonitoring ? "border-amber-500/50 text-amber-300 bg-amber-500/10" : "border-white/10 text-gray-400 bg-white/5"}`}>
+                              {rules.restrictedZoneMonitoring ? "Restricted zone ON" : "Restricted zone off"}
+                            </span>
+                            <span className="text-[10px] px-2 py-1 rounded-full border border-white/10 text-gray-300 bg-white/5">
+                              People max {rules.maxPeopleAllowed ?? "-"}
+                            </span>
+                            <span className="text-[10px] px-2 py-1 rounded-full border border-white/10 text-gray-300 bg-white/5">
+                              Hours {rules.openHoursStart || "--:--"} - {rules.openHoursEnd || "--:--"}
+                            </span>
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -347,6 +510,13 @@ export default function CamerasPage() {
                             className="text-xs px-2 py-1 rounded-lg border border-white/20 hover:bg-white/5 transition"
                           >
                             {isActive ? "Pause" : "Activate"}
+                          </button>
+
+                          <button
+                            onClick={() => openRuleEditor(camera)}
+                            className="text-xs px-2 py-1 rounded-lg border border-green-500/40 text-green-300 hover:bg-green-500/10 transition"
+                          >
+                            Settings
                           </button>
 
                           <button
@@ -497,6 +667,117 @@ export default function CamerasPage() {
         </div>
 
       </div>
+
+      {editingCamera ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="absolute inset-0" onClick={closeRuleEditor} />
+          <div className="relative z-10 w-full max-w-2xl rounded-2xl border border-white/10 bg-[#0b1114] shadow-[0_20px_80px_rgba(0,0,0,0.55)] p-5 md:p-6">
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <p className="text-[11px] tracking-[0.18em] text-green-300/80 mb-2">CAMERA RULES</p>
+                <h3 className="text-2xl font-semibold text-white">{editingCamera.name}</h3>
+                <p className="text-sm text-gray-400 mt-1">Configure restricted zone monitoring, occupancy limits, and working hours.</p>
+              </div>
+              <button
+                onClick={closeRuleEditor}
+                className="rounded-lg border border-white/10 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-4 md:col-span-2">
+                <input
+                  type="checkbox"
+                  name="restrictedZoneMonitoring"
+                  checked={ruleForm.restrictedZoneMonitoring}
+                  onChange={handleRuleChange}
+                  className="mt-1 h-4 w-4 accent-green-400"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-white">Enable restricted zone monitoring</span>
+                  <span className="block text-xs text-gray-400 mt-1">Treat this camera as a protected area and flag zone breaches in the dashboard.</span>
+                </span>
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm text-gray-300">Zone label</span>
+                <input
+                  name="zoneLabel"
+                  value={ruleForm.zoneLabel}
+                  onChange={handleRuleChange}
+                  placeholder="Lobby, server room, parking bay..."
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm outline-none focus:border-green-400/60"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm text-gray-300">Max people allowed</span>
+                <input
+                  type="number"
+                  min="0"
+                  name="maxPeopleAllowed"
+                  value={ruleForm.maxPeopleAllowed}
+                  onChange={handleRuleChange}
+                  placeholder="5"
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm outline-none focus:border-green-400/60"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm text-gray-300">Open hours start</span>
+                <input
+                  type="time"
+                  name="openHoursStart"
+                  value={ruleForm.openHoursStart}
+                  onChange={handleRuleChange}
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm outline-none focus:border-green-400/60"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm text-gray-300">Open hours end</span>
+                <input
+                  type="time"
+                  name="openHoursEnd"
+                  value={ruleForm.openHoursEnd}
+                  onChange={handleRuleChange}
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm outline-none focus:border-green-400/60"
+                />
+              </label>
+
+              <label className="space-y-2 md:col-span-2">
+                <span className="text-sm text-gray-300">Notes</span>
+                <textarea
+                  name="notes"
+                  value={ruleForm.notes}
+                  onChange={handleRuleChange}
+                  rows="4"
+                  placeholder="Anything the security team should know about this camera..."
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm outline-none focus:border-green-400/60 resize-none"
+                />
+              </label>
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+              <button
+                onClick={closeRuleEditor}
+                className="rounded-xl border border-white/10 px-4 py-3 text-sm text-gray-300 hover:bg-white/5 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveRules}
+                disabled={savingRules}
+                className="rounded-xl bg-green-400 px-4 py-3 text-sm font-semibold text-black hover:bg-green-300 transition disabled:opacity-60"
+              >
+                {savingRules ? "Saving..." : "Save rules"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
     </main>
   )
